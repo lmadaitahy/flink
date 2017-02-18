@@ -2,6 +2,7 @@ package gg;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import sun.reflect.generics.reflectiveObjects.NotImplementedException;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -36,6 +37,7 @@ public class CFLManager {
 
 	public CFLManager() {
 		//todo   ez a lokalis lesz
+		throw new NotImplementedException();
 	}
 
 	public CFLManager(String[] hosts) {
@@ -64,7 +66,7 @@ public class CFLManager {
 
 	private List<CFLCallback> callbacks = new ArrayList<>();
 
-	void createSenderConnections() {
+	private void createSenderConnections() {
 		final int timeout = 500;
 		int i = 0;
 		for (String host : hosts) {
@@ -106,7 +108,7 @@ public class CFLManager {
 		LOG.info("GGG All sender connections are up.");
 	}
 
-	void sendElement(CFLElement e) {
+	private void sendElement(CFLElement e) {
 		final int bufLen = 8;
 		byte[] buf = new byte[bufLen];
 		buf[0] = (byte)(e.seqNum % 256);
@@ -127,7 +129,7 @@ public class CFLManager {
 		}
 	}
 
-	class ConnAccepter implements Runnable {
+	private class ConnAccepter implements Runnable {
 
 		Thread thread;
 
@@ -158,7 +160,7 @@ public class CFLManager {
 		}
 	}
 
-	class ConnReader implements Runnable {
+	private class ConnReader implements Runnable {
 
 		Thread thread;
 
@@ -205,7 +207,7 @@ public class CFLManager {
 		}
 	}
 
-	synchronized void addTentative(int seqNum, int bbId) {
+	private synchronized void addTentative(int seqNum, int bbId) {
 		while (seqNum >= tentativeCFL.size()) {
 			tentativeCFL.add(null);
 		}
@@ -219,6 +221,12 @@ public class CFLManager {
 			LOG.info("GGG Adding BBID " + t + " to CFL");
 			notifyCallbacks();
 			// szoval minden elemnel kuldunk kulon, tehat a subscribereknek sok esetben eleg lehet az utolso elemet nezni
+		}
+	}
+
+	private synchronized void notifyCallbacks() {
+		for(CFLCallback cb: callbacks) {
+			cb.notify(curCFL);
 		}
 	}
 
@@ -237,11 +245,5 @@ public class CFLManager {
 		LOG.info("GGG CFLCallback subscription");
 		callbacks.add(cb);
 		cb.notify(curCFL);
-	}
-
-	synchronized void notifyCallbacks() {
-		for(CFLCallback cb: callbacks) {
-			cb.notify(curCFL);
-		}
 	}
 }
