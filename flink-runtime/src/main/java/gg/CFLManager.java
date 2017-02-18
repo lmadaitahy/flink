@@ -65,7 +65,7 @@ public class CFLManager {
 	private List<CFLCallback> callbacks = new ArrayList<>();
 
 	void createSenderConnections() {
-		final int timeout = 1000;
+		final int timeout = 500;
 		int i = 0;
 		for (String host : hosts) {
 			try {
@@ -76,16 +76,23 @@ public class CFLManager {
 						socket.setPerformancePreferences(0,1,0);
 						LOG.info("GGG Connecting sender connection to " + host + ".");
 						socket.connect(new InetSocketAddress(host, port), timeout);
-						LOG.info("GGG Sender connection connected to " + host + ".");
+						LOG.info("GGG Sender connection connected to  " + host + ".");
 						break;
 					} catch (SocketTimeoutException exTimeout) {
-						LOG.info("GGG Sender connection to " + host + " timed out, retrying...");
+						LOG.info("GGG Sender connection to            " + host + " timed out, retrying...");
 					} catch (ConnectException ex) {
-						LOG.info("GGG Sender connection to " + host + " was refused, retrying...");
+						LOG.info("GGG Sender connection to            " + host + " was refused, retrying...");
 						try {
 							Thread.sleep(500);
 						} catch (InterruptedException e) {
 							throw new RuntimeException(e);
+						}
+					} catch (IOException e) {
+						LOG.info("GGG Sender connection to            " + host + " caused an IOException, retrying..." + e);
+						try {
+							Thread.sleep(500);
+						} catch (InterruptedException e2) {
+							throw new RuntimeException(e2);
 						}
 					}
 				}
@@ -96,6 +103,7 @@ public class CFLManager {
 			}
 			i++;
 		}
+		LOG.info("GGG All sender connections are up.");
 	}
 
 	void sendElement(CFLElement e) {
@@ -208,7 +216,7 @@ public class CFLManager {
 			if (t == null)
 				break;
 			curCFL.add(t);
-			LOG.info("GGG Adding BBID t to CFL");
+			LOG.info("GGG Adding BBID " + t + " to CFL");
 			notifyCallbacks();
 			// szoval minden elemnel kuldunk kulon, tehat a subscribereknek sok esetben eleg lehet az utolso elemet nezni
 		}
