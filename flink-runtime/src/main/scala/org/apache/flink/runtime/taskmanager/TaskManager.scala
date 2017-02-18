@@ -208,6 +208,26 @@ class TaskManager(
         log.error("Could not start leader retrieval service.", e)
         throw new RuntimeException("Could not start leader retrieval service.", e)
     }
+
+    //ggg
+    import sys.process._
+    import gg._
+    //val curDir = ("pwd"!!).stripSuffix("\n")
+    val hostName = ("hostname"!!).stripSuffix("\n")
+
+    val confDir = System.getenv(ConfigConstants.ENV_FLINK_CONF_DIR)
+    if (confDir != null) {
+      val allHosts = scala.io.Source.fromFile(confDir + "/slaves").getLines().toArray
+      val hostsExceptMe = allHosts.filter(s => s != hostName)
+      CFLManager.create(hostsExceptMe)
+    } else {
+      //local execution
+
+      ////CFLManager.create() todo
+      //teszt:
+      CFLManager.create(Array[String]("localhost"))
+    }
+    //
   }
 
   /**
