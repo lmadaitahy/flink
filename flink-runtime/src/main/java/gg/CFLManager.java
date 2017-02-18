@@ -88,7 +88,7 @@ public class CFLManager {
 							throw new RuntimeException(e);
 						}
 					} catch (IOException e) {
-						LOG.info("GGG Sender connection to            " + host + " caused an IOException, retrying..." + e);
+						LOG.info("GGG Sender connection to            " + host + " caused an IOException, retrying... " + e);
 						try {
 							Thread.sleep(500);
 						} catch (InterruptedException e2) {
@@ -138,7 +138,7 @@ public class CFLManager {
 
 		@Override
 		public void run() {
-			ServerSocket serverSocket = null;
+			ServerSocket serverSocket;
 			try {
 				serverSocket = new ServerSocket(port);
 				int i = 0;
@@ -184,7 +184,7 @@ public class CFLManager {
 						int numRead = ins.read(buf,i,bufLen-i);
 						if(numRead == -1) {
 							// connection was closed
-							LOG.info("GGG Connection was closed remotely (asszem).");
+							LOG.info("GGG Connection to " + socket.getRemoteSocketAddress() + " was closed remotely (asszem).");
 							return;
 						}
 						i += numRead;
