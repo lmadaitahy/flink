@@ -1101,6 +1101,11 @@ public class DataStream<T> {
 		return returnStream;
 	}
 
+	public <R> SingleOutputStreamOperator<R> bt(String operatorName, TypeInformation<R> outTypeInfo, InputParaSettable<T, R> operator) {
+		operator.setInputPara(getParallelism());
+		return transform(operatorName, outTypeInfo, operator);
+	}
+
 	/**
 	 * Internal function for setting the partitioner for the DataStream.
 	 *
