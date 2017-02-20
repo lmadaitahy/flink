@@ -22,9 +22,13 @@ public class CFLManager {
 	protected static final Logger LOG = LoggerFactory.getLogger(CFLManager.class);
 
 	static CFLManager sing = null;
-	static CFLManager getSing() {return sing;}
+	public static CFLManager getSing() {return sing;}
 
 	static final int port = 4444;
+
+	public static byte tmId = -1;
+	public static int numAllSlots = -1;
+	public static int numTaskSlotsPerTm = -1;
 
 	public static void create() {
 		sing = new CFLManager();
@@ -36,8 +40,8 @@ public class CFLManager {
 
 
 	public CFLManager() {
-		//todo   ez a lokalis lesz
-		throw new NotImplementedException();
+		// local execution
+		this(new String[]{});
 	}
 
 	public CFLManager(String[] hosts) {
@@ -49,6 +53,8 @@ public class CFLManager {
 
 		senderSockets = new Socket[hosts.length];
 		senderStreams = new OutputStream[hosts.length];
+
+		curCFL.add(0);
 
 		createSenderConnections();
 	}
@@ -244,6 +250,12 @@ public class CFLManager {
 	public synchronized void subscribe(CFLCallback cb) {
 		LOG.info("GGG CFLCallback subscription");
 		callbacks.add(cb);
-		cb.notify(curCFL);
+
+		// Egyenkent elkuldjuk a notificationt mindegyik eddigirol
+		List<Integer> tmpCfl = new ArrayList<>();
+		for(Integer x: curCFL) {
+			tmpCfl.add(x);
+			cb.notify(tmpCfl);
+		}
 	}
 }

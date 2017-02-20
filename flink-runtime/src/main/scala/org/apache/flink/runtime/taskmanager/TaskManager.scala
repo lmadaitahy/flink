@@ -218,14 +218,25 @@ class TaskManager(
     val confDir = System.getenv(ConfigConstants.ENV_FLINK_CONF_DIR)
     if (confDir != null) {
       val allHosts = scala.io.Source.fromFile(confDir + "/slaves").getLines().toArray
+      assert(!allHosts.contains(""))
       val hostsExceptMe = allHosts.filter(s => s != hostName)
       CFLManager.create(hostsExceptMe)
+
+      if (!allHosts.contains(hostName))
+        throw new RuntimeException("A slaves fajlban a 'hostname' altal visszaadott neveknek kell lenniuk")
+      CFLManager.tmId = allHosts.indexOf(hostName).asInstanceOf[Byte]
+      CFLManager.numAllSlots = allHosts.length * numberOfSlots
+      CFLManager.numTaskSlotsPerTm = numberOfSlots
     } else {
       //local execution
 
-      ////CFLManager.create() todo
-      //teszt:
-      CFLManager.create(Array[String]("localhost"))
+      CFLManager.create()
+      CFLManager.tmId = 0
+      CFLManager.numAllSlots = numberOfSlots
+      CFLManager.numTaskSlotsPerTm = numberOfSlots
+
+      //tmp teszt:
+      //CFLManager.create(Array[String]("localhost"))
     }
     //
   }

@@ -1108,7 +1108,7 @@ public class DataStream<T> {
 	 *            Partitioner to set.
 	 * @return The modified DataStream.
 	 */
-	protected DataStream<T> setConnectionType(StreamPartitioner<T> partitioner) {
+	public DataStream<T> setConnectionType(StreamPartitioner<T> partitioner) {
 		return new DataStream<>(this.getExecutionEnvironment(), new PartitionTransformation<>(this.getTransformation(), partitioner));
 	}
 
