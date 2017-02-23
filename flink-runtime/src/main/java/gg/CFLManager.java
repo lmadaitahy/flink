@@ -54,8 +54,6 @@ public class CFLManager {
 		senderSockets = new Socket[hosts.length];
 		senderStreams = new OutputStream[hosts.length];
 
-		curCFL.add(0);
-
 		createSenderConnections();
 	}
 
