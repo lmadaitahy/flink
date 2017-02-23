@@ -256,4 +256,11 @@ public class CFLManager {
 			cb.notify(tmpCfl);
 		}
 	}
+
+	public synchronized void resetCFL() {
+		LOG.info("GGG Resetting CFL.");
+
+		tentativeCFL.clear();
+		curCFL.clear();
+	}
 }
