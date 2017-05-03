@@ -70,6 +70,8 @@ public class CFLManager {
 
 	private List<CFLCallback> callbacks = new ArrayList<>();
 
+	private int terminalBB = -1;
+
 	private void createSenderConnections() {
 		final int timeout = 500;
 		int i = 0;
@@ -229,11 +231,21 @@ public class CFLManager {
 	}
 
 	private synchronized void notifyCallbacks() {
-		for(CFLCallback cb: callbacks) {
+		for (CFLCallback cb: callbacks) {
 			cb.notify(curCFL);
+		}
+
+		assert terminalBB != -1; // a drivernek be kell allitania a job elindulasa elott
+		if (curCFL.get(curCFL.size() - 1) == terminalBB) {
+			// We need to copy, because notifyTerminalBB might call unsubscribe, which would lead to a ConcurrentModificationException
+			ArrayList<CFLCallback> origCallbacks = new ArrayList<>(callbacks);
+			for (CFLCallback cb: origCallbacks) {
+				cb.notifyTerminalBB();
+			}
 		}
 	}
 
+	// A helyi TM-ben futo operatorok hivjak
 	public synchronized void appendToCFL(int bbId) {
 		assert tentativeCFL.size() == curCFL.size(); // azaz ilyenkor nem lehetnek lyukak
 
@@ -246,7 +258,7 @@ public class CFLManager {
 	}
 
 	public synchronized void subscribe(CFLCallback cb) {
-		LOG.info("GGG CFLCallback subscription");
+		LOG.info("GGG CFLManager.subscribe");
 		callbacks.add(cb);
 
 		// Egyenkent elkuldjuk a notificationt mindegyik eddigirol
@@ -255,6 +267,19 @@ public class CFLManager {
 			tmpCfl.add(x);
 			cb.notify(tmpCfl);
 		}
+
+		assert terminalBB != -1; // a drivernek be kell allitania a job elindulasa elott
+		if (curCFL.get(curCFL.size() - 1) == terminalBB) {
+			cb.notifyTerminalBB();
+		}
+	}
+
+	public synchronized void unsubscribe(CFLCallback cb) {
+		LOG.info("GGG CFLManager.unsubscribe");
+		callbacks.remove(cb);
+		if (callbacks.isEmpty()) {
+			throw new NotImplementedException(); //TODO
+		}
 	}
 
 	public synchronized void resetCFL() {
@@ -262,5 +287,9 @@ public class CFLManager {
 
 		tentativeCFL.clear();
 		curCFL.clear();
+	}
+
+	public synchronized void specifyTerminalBB(int bbId) {
+		terminalBB = bbId;
 	}
 }
