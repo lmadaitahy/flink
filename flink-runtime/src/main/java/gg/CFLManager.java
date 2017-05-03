@@ -21,10 +21,10 @@ public class CFLManager {
 
 	protected static final Logger LOG = LoggerFactory.getLogger(CFLManager.class);
 
-	static CFLManager sing = null;
+	private static CFLManager sing = null;
 	public static CFLManager getSing() {return sing;}
 
-	static final int port = 4444;
+	private static final int port = 4444;
 
 	public static byte tmId = -1;
 	public static int numAllSlots = -1;
@@ -65,8 +65,8 @@ public class CFLManager {
 	private Socket[] senderSockets;
 	private OutputStream[] senderStreams;
 
-	private List<Integer> curCFL = new ArrayList<>();
-	private List<Integer> tentativeCFL = new ArrayList<>();
+	private List<Integer> tentativeCFL = new ArrayList<>(); // ez lehet lyukas, ha nem sorrendben erkeznek meg az elemek
+	private List<Integer> curCFL = new ArrayList<>(); // ez sosem lyukas
 
 	private List<CFLCallback> callbacks = new ArrayList<>();
 
