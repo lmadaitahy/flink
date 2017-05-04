@@ -169,6 +169,9 @@ class JobManager(
     flinkConfiguration.getLong(JobManagerOptions.RESOURCE_MANAGER_RECONNECT_INTERVAL),
     TimeUnit.MILLISECONDS)
 
+  // CFL
+  val stopVotes = mutable.Map[JobID, Int]()
+
   /**
    * Run when the job manager is started. Simply logs an informational message.
    * The method also starts the leader election service.
@@ -530,24 +533,17 @@ class JobManager(
       }(context.dispatcher)
 
     case CancelJob(jobID) =>
-      log.info(s"Trying to cancel job with ID $jobID.")
+      cancelJob(jobID)
 
-      currentJobs.get(jobID) match {
-        case Some((executionGraph, _)) =>
-          // execute the cancellation asynchronously
-          val origSender = sender
-          Future {
-            executionGraph.cancel()
-            origSender ! decorateMessage(CancellationSuccess(jobID))
-          }(context.dispatcher)
-        case None =>
-          log.info(s"No job found with ID $jobID.")
-          sender ! decorateMessage(
-            CancellationFailure(
-              jobID,
-              new IllegalArgumentException(s"No job found with ID $jobID."))
-          )
+    case VoteStop(jobID, numTMs) =>
+      log.info(s"GGG JM received VoteStop($jobID, $numTMs)")
+
+      stopVotes.put(jobID, stopVotes.getOrElse(jobID, 0) + 1)
+      if (stopVotes(jobID) >= numTMs) {
+        assert(stopVotes(jobID) == numTMs)
+        cancelJob(jobID)
       }
+
 
     case CancelJobWithSavepoint(jobId, savepointDirectory) =>
       try {
@@ -1176,6 +1172,27 @@ class JobManager(
             Status.Failure(
               new FlinkException("No REST endpoint has been started for the JobManager.")))
         )
+  }
+
+  private def cancelJob(jobID: JobID): Unit = {
+    log.info(s"Trying to cancel job with ID $jobID.")
+
+    currentJobs.get(jobID) match {
+      case Some((executionGraph, _)) =>
+        // execute the cancellation asynchronously
+        Future {
+          executionGraph.cancel()
+        }(context.dispatcher)
+
+        sender ! decorateMessage(CancellationSuccess(jobID))
+      case None =>
+        log.info(s"No job found with ID $jobID.")
+        sender ! decorateMessage(
+          CancellationFailure(
+            jobID,
+            new IllegalArgumentException(s"No job found with ID $jobID."))
+        )
+    }
   }
 
   /**

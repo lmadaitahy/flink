@@ -24,13 +24,13 @@ import java.net.{BindException, InetAddress, InetSocketAddress, ServerSocket}
 import java.util
 import java.util.concurrent.{Callable, TimeUnit, TimeoutException}
 import java.util.{Collections, UUID}
-
 import _root_.akka.actor._
 import _root_.akka.pattern.ask
 import _root_.akka.util.Timeout
+import org.apache.flink.api.common.time.Time
+import gg.CFLManager
 import grizzled.slf4j.Logger
 import org.apache.commons.lang3.exception.ExceptionUtils
-import org.apache.flink.api.common.time.Time
 import org.apache.flink.configuration._
 import org.apache.flink.core.fs.FileSystem
 import org.apache.flink.runtime.accumulators.AccumulatorSnapshot
@@ -55,6 +55,7 @@ import org.apache.flink.runtime.io.network.netty.PartitionProducerStateChecker
 import org.apache.flink.runtime.io.network.partition.ResultPartitionConsumableNotifier
 import org.apache.flink.runtime.leaderretrieval.{LeaderRetrievalListener, LeaderRetrievalService}
 import org.apache.flink.runtime.memory.MemoryManager
+import org.apache.flink.runtime.messages.JobManagerMessages.VoteStop
 import org.apache.flink.runtime.messages.Messages._
 import org.apache.flink.runtime.messages.RegistrationMessages._
 import org.apache.flink.runtime.messages.StackTraceSampleMessages.{SampleTaskStackTrace, StackTraceSampleMessages, TriggerStackTraceSample}
@@ -182,6 +183,9 @@ class TaskManager(
     ResultPartitionConsumableNotifier,
     TaskManagerActions)] = None
 
+  //ggg
+  private var allHosts: Array[String] = _
+
   // --------------------------------------------------------------------------
   //  Actor messages and life cycle
   // --------------------------------------------------------------------------
@@ -217,10 +221,10 @@ class TaskManager(
 
     val confDir = System.getenv(ConfigConstants.ENV_FLINK_CONF_DIR)
     if (confDir != null) {
-      val allHosts = scala.io.Source.fromFile(confDir + "/slaves").getLines().toArray
+      allHosts = scala.io.Source.fromFile(confDir + "/slaves").getLines().toArray
       assert(!allHosts.contains(""))
       val hostsExceptMe = allHosts.filter(s => s != hostName)
-      CFLManager.create(hostsExceptMe)
+      CFLManager.create(this, hostsExceptMe)
 
       if (!allHosts.contains(hostName))
         throw new RuntimeException("A slaves fajlban a 'hostname' altal visszaadott neveknek kell lenniuk")
@@ -230,7 +234,9 @@ class TaskManager(
     } else {
       //local execution
 
-      CFLManager.create()
+      allHosts = Array("localhost")
+
+      CFLManager.create(this)
       CFLManager.tmId = 0
       CFLManager.numAllSlots = numberOfSlots
       CFLManager.numTaskSlotsPerTm = numberOfSlots
@@ -239,6 +245,12 @@ class TaskManager(
       //CFLManager.create(Array[String]("localhost"))
     }
     //
+  }
+
+  def CFLVoteStop(): Unit = {
+    currentJobManager foreach {
+      _ ! decorateMessage(VoteStop(CFLManager.getSing.getJobID, allHosts.length))
+    }
   }
 
   /**
@@ -1182,6 +1194,10 @@ class TaskManager(
           "Inconsistent job ID information inside TaskDeploymentDescriptor (" +
           tdd.getJobId + " vs. " + jobInformation.getJobId + ")")
       }
+
+      val cflMan = CFLManager.getSing
+      assert(cflMan != null) // mert mar a TM indulasakor letrehoztuk
+      cflMan.setJobID(jobInformation.getJobId)
 
       val taskInformation = try {
         tdd.getSerializedTaskInformation.deserializeValue(getClass.getClassLoader)

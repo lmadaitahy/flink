@@ -1,5 +1,7 @@
 package gg;
 
+import org.apache.flink.api.common.JobID;
+import org.apache.flink.runtime.taskmanager.TaskManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import sun.reflect.generics.reflectiveObjects.NotImplementedException;
@@ -30,21 +32,22 @@ public class CFLManager {
 	public static int numAllSlots = -1;
 	public static int numTaskSlotsPerTm = -1;
 
-	public static void create() {
-		sing = new CFLManager();
+	public static void create(TaskManager tm) {
+		sing = new CFLManager(tm);
 	}
 
-	public static void create(String[] hosts) {
-		sing = new CFLManager(hosts);
+	public static void create(TaskManager tm, String[] hosts) {
+		sing = new CFLManager(tm, hosts);
 	}
 
 
-	public CFLManager() {
+	public CFLManager(TaskManager tm) {
 		// local execution
-		this(new String[]{});
+		this(tm, new String[]{});
 	}
 
-	public CFLManager(String[] hosts) {
+	public CFLManager(TaskManager tm, String[] hosts) {
+		this.tm = tm;
 		this.hosts = hosts;
 		connReaders = new ConnReader[hosts.length];
 		recvRemoteAddresses = new SocketAddress[hosts.length];
@@ -56,6 +59,8 @@ public class CFLManager {
 
 		createSenderConnections();
 	}
+
+	private TaskManager tm;
 
 	private String[] hosts;
 	private ConnAccepter connAccepter;
@@ -71,6 +76,19 @@ public class CFLManager {
 	private List<CFLCallback> callbacks = new ArrayList<>();
 
 	private int terminalBB = -1;
+
+	public JobID getJobID() {
+		return jobID;
+	}
+
+	public void setJobID(JobID jobID) {
+		if (this.jobID != null) {
+			throw new RuntimeException("GGG Csak egy job futhat egyszerre");
+		}
+		this.jobID = jobID;
+	}
+
+	private JobID jobID = null;
 
 	private void createSenderConnections() {
 		final int timeout = 500;
@@ -278,7 +296,8 @@ public class CFLManager {
 		LOG.info("GGG CFLManager.unsubscribe");
 		callbacks.remove(cb);
 		if (callbacks.isEmpty()) {
-			throw new NotImplementedException(); //TODO
+			setJobID(null);
+			tm.CFLVoteStop();
 		}
 	}
 

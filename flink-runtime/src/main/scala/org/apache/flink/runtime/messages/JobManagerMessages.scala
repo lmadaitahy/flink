@@ -111,6 +111,9 @@ object JobManagerMessages {
    */
   case class CancelJob(jobID: JobID) extends RequiresLeaderSessionID
 
+  // CFL
+  case class VoteStop(jobID: JobID, numTMs: Int) extends RequiresLeaderSessionID
+
   /**
     * Cancels the job with the given [[jobID]] at the JobManager. Before cancellation a savepoint
     * is triggered without any other checkpoints in between. The result of the cancellation is
