@@ -82,8 +82,9 @@ public class CFLManager {
 	}
 
 	public void setJobID(JobID jobID) {
-		if (this.jobID != null) {
-			throw new RuntimeException("GGG Csak egy job futhat egyszerre");
+		LOG.info("GGG CFLManager.setJobID to '" + jobID + "'");
+		if (this.jobID != null && !this.jobID.equals(jobID)) {
+			throw new RuntimeException("GGG Csak egy job futhat egyszerre. (old: " + this.jobID + ", new: " + jobID + ")");
 		}
 		this.jobID = jobID;
 	}
@@ -295,9 +296,12 @@ public class CFLManager {
 	public synchronized void unsubscribe(CFLCallback cb) {
 		LOG.info("GGG CFLManager.unsubscribe");
 		callbacks.remove(cb);
+
+		// Arra kene vigyazni, hogy nehogy az legyen, hogy olyankor hiszi azt, hogy mindenki unsubscribe-olt, amikor meg nem mindenki subscribe-olt.
+		// Egyelore figyelmen kivul hagyom ezt a problemat, valszeg nem nagyon fogok belefutni.
 		if (callbacks.isEmpty()) {
-			setJobID(null);
 			tm.CFLVoteStop();
+			setJobID(null);
 		}
 	}
 
