@@ -83,7 +83,7 @@ public class CFLManager {
 
 	public void setJobID(JobID jobID) {
 		LOG.info("GGG CFLManager.setJobID to '" + jobID + "'");
-		if (this.jobID != null && !this.jobID.equals(jobID)) {
+		if (this.jobID != null && !this.jobID.equals(jobID) && jobID != null) {
 			throw new RuntimeException("GGG Csak egy job futhat egyszerre. (old: " + this.jobID + ", new: " + jobID + ")");
 		}
 		this.jobID = jobID;
@@ -288,7 +288,7 @@ public class CFLManager {
 		}
 
 		assert terminalBB != -1; // a drivernek be kell allitania a job elindulasa elott
-		if (curCFL.get(curCFL.size() - 1) == terminalBB) {
+		if (curCFL.size() > 0 && curCFL.get(curCFL.size() - 1) == terminalBB) {
 			cb.notifyTerminalBB();
 		}
 	}
@@ -313,6 +313,7 @@ public class CFLManager {
 	}
 
 	public synchronized void specifyTerminalBB(int bbId) {
+		LOG.info("GGG specifyTerminalBB: " + bbId);
 		terminalBB = bbId;
 	}
 }

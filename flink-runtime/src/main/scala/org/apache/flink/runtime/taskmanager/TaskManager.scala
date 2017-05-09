@@ -55,7 +55,7 @@ import org.apache.flink.runtime.io.network.netty.PartitionProducerStateChecker
 import org.apache.flink.runtime.io.network.partition.ResultPartitionConsumableNotifier
 import org.apache.flink.runtime.leaderretrieval.{LeaderRetrievalListener, LeaderRetrievalService}
 import org.apache.flink.runtime.memory.MemoryManager
-import org.apache.flink.runtime.messages.JobManagerMessages.VoteStop
+import org.apache.flink.runtime.messages.JobManagerMessages.{CancellationSuccess, VoteStop}
 import org.apache.flink.runtime.messages.Messages._
 import org.apache.flink.runtime.messages.RegistrationMessages._
 import org.apache.flink.runtime.messages.StackTraceSampleMessages.{SampleTaskStackTrace, StackTraceSampleMessages, TriggerStackTraceSample}
@@ -392,6 +392,11 @@ class TaskManager(
       }
 
       sender ! decorateMessage(ResponseNumActiveConnections(numActive))
+
+    // CFL
+    // Ez azert jon ide be, mert korabban nem kuldott cancel-t a tm (hanem csak a client), viszont most kuld a vote-nal (vagy vmi ilyesmi)
+    case CancellationSuccess(_,_) =>
+      ()
   }
 
   /**
