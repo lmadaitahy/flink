@@ -70,6 +70,9 @@ public class CFLManager {
 	private Socket[] senderSockets;
 	private OutputStream[] senderStreams;
 
+	private volatile boolean allSenderUp = false;
+	private volatile boolean allIncomingUp = false;
+
 	private List<Integer> tentativeCFL = new ArrayList<>(); // ez lehet lyukas, ha nem sorrendben erkeznek meg az elemek
 	private List<Integer> curCFL = new ArrayList<>(); // ez sosem lyukas
 
@@ -131,6 +134,7 @@ public class CFLManager {
 			i++;
 		}
 		LOG.info("GGG All sender connections are up.");
+		allSenderUp = true;
 	}
 
 	private void sendElement(CFLElement e) {
@@ -179,6 +183,7 @@ public class CFLManager {
 					i++;
 				}
 				LOG.info("GGG All incoming connections connected");
+				allIncomingUp = true;
 			} catch (IOException e) {
 				throw new RuntimeException(e);
 			}
@@ -278,6 +283,8 @@ public class CFLManager {
 
 	public synchronized void subscribe(CFLCallback cb) {
 		LOG.info("GGG CFLManager.subscribe");
+		assert allIncomingUp && allSenderUp;
+
 		callbacks.add(cb);
 
 		// Egyenkent elkuldjuk a notificationt mindegyik eddigirol
