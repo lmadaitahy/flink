@@ -50,6 +50,7 @@ public class UnionTransformation<T> extends StreamTransformation<T> {
 		super("Union", inputs.get(0).getOutputType(), inputs.get(0).getParallelism());
 
 		for (StreamTransformation<T> input: inputs) {
+			assert input.getParallelism() == getParallelism(); // [CFL] You should add an extra operator that does nothing but just changes the parallelism to be unified.
 			if (!input.getOutputType().equals(getOutputType())) {
 				throw new UnsupportedOperationException("Type mismatch in input " + input);
 			}
