@@ -1103,6 +1103,7 @@ public class DataStream<T> {
 
 	public <R> SingleOutputStreamOperator<R> bt(String operatorName, TypeInformation<R> outTypeInfo, InputParaSettable<T, R> operator) {
 		operator.setInputPara(getParallelism());
+		operator.setName(operatorName);
 		return transform(operatorName, outTypeInfo, operator);
 	}
 
