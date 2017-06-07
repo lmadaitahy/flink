@@ -22,6 +22,7 @@ import org.apache.flink.core.io.IOReadableWritable;
 import org.apache.flink.runtime.io.network.api.writer.ChannelSelector;
 import org.apache.flink.runtime.io.network.api.writer.RecordWriter;
 import org.apache.flink.runtime.io.network.api.writer.ResultPartitionWriter;
+import org.apache.flink.streaming.api.CanForceFlush;
 
 import java.io.IOException;
 
@@ -82,7 +83,7 @@ public class StreamRecordWriter<T extends IOReadableWritable> extends RecordWrit
 	public void emit(T record) throws IOException, InterruptedException {
 		checkErroneous();
 		super.emit(record);
-		if (flushAlways) {
+		if (flushAlways || (record instanceof CanForceFlush && ((CanForceFlush) record).shouldFlush())) {
 			flush();
 		}
 	}
@@ -91,7 +92,7 @@ public class StreamRecordWriter<T extends IOReadableWritable> extends RecordWrit
 	public void broadcastEmit(T record) throws IOException, InterruptedException {
 		checkErroneous();
 		super.broadcastEmit(record);
-		if (flushAlways) {
+		if (flushAlways || (record instanceof CanForceFlush && ((CanForceFlush) record).shouldFlush())) {
 			flush();
 		}
 	}
@@ -100,7 +101,7 @@ public class StreamRecordWriter<T extends IOReadableWritable> extends RecordWrit
 	public void randomEmit(T record) throws IOException, InterruptedException {
 		checkErroneous();
 		super.randomEmit(record);
-		if (flushAlways) {
+		if (flushAlways || (record instanceof CanForceFlush && ((CanForceFlush) record).shouldFlush())) {
 			flush();
 		}
 	}
