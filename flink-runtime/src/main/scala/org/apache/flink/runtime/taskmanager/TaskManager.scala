@@ -224,7 +224,7 @@ class TaskManager(
       allHosts = scala.io.Source.fromFile(confDir + "/slaves").getLines().toArray
       assert(!allHosts.contains(""))
       val hostsExceptMe = allHosts.filter(s => s != hostName)
-      CFLManager.create(this, hostsExceptMe)
+      CFLManager.create(this, hostsExceptMe, allHosts.head == hostName)
 
       if (!allHosts.contains(hostName))
         throw new RuntimeException("A slaves fajlban a 'hostname' altal visszaadott neveknek kell lenniuk")

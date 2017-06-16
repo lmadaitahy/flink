@@ -1,10 +1,16 @@
 package gg;
 
+import org.apache.flink.api.common.ExecutionConfig;
 import org.apache.flink.api.common.JobID;
+import org.apache.flink.api.common.typeinfo.TypeInfoFactory;
+import org.apache.flink.api.common.typeinfo.TypeInformation;
+import org.apache.flink.api.common.typeutils.TypeSerializer;
+import org.apache.flink.core.memory.DataInputViewStreamWrapper;
+import org.apache.flink.core.memory.DataOutputView;
+import org.apache.flink.core.memory.DataOutputViewStreamWrapper;
 import org.apache.flink.runtime.taskmanager.TaskManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import sun.reflect.generics.reflectiveObjects.NotImplementedException;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -16,8 +22,7 @@ import java.net.Socket;
 import java.net.SocketAddress;
 import java.net.SocketTimeoutException;
 import java.nio.ByteOrder;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
 
 public class CFLManager {
 
@@ -36,19 +41,20 @@ public class CFLManager {
 		sing = new CFLManager(tm);
 	}
 
-	public static void create(TaskManager tm, String[] hosts) {
-		sing = new CFLManager(tm, hosts);
+	public static void create(TaskManager tm, String[] hosts, boolean coordinator) {
+		sing = new CFLManager(tm, hosts, coordinator);
 	}
 
 
 	public CFLManager(TaskManager tm) {
 		// local execution
-		this(tm, new String[]{});
+		this(tm, new String[]{}, true);
 	}
 
-	public CFLManager(TaskManager tm, String[] hosts) {
+	public CFLManager(TaskManager tm, String[] hosts, boolean coordinator) {
 		this.tm = tm;
 		this.hosts = hosts;
+		this.coordinator = coordinator;
 		connReaders = new ConnReader[hosts.length];
 		recvRemoteAddresses = new SocketAddress[hosts.length];
 
@@ -62,6 +68,8 @@ public class CFLManager {
 
 	private TaskManager tm;
 
+	private boolean coordinator;
+
 	private String[] hosts;
 	private ConnAccepter connAccepter;
 	private ConnReader[] connReaders;
@@ -69,6 +77,7 @@ public class CFLManager {
 
 	private Socket[] senderSockets;
 	private OutputStream[] senderStreams;
+	private DataOutputViewStreamWrapper[] senderDataOutputViews;
 
 	private volatile boolean allSenderUp = false;
 	private volatile boolean allIncomingUp = false;
@@ -128,6 +137,7 @@ public class CFLManager {
 				}
 				senderSockets[i] = socket; //new Socket(host, port);
 				senderStreams[i] = socket.getOutputStream();
+				senderDataOutputViews[i] = new DataOutputViewStreamWrapper(senderStreams[i]);
 			} catch (IOException e) {
 				throw new RuntimeException(e);
 			}
@@ -138,19 +148,9 @@ public class CFLManager {
 	}
 
 	private void sendElement(CFLElement e) {
-		final int bufLen = 8;
-		byte[] buf = new byte[bufLen];
-		buf[0] = (byte)(e.seqNum % 256);
-		buf[1] = (byte)((e.seqNum / 256) % 256);
-		buf[2] = (byte)((e.seqNum / 256 / 256) % 256);
-		buf[3] = (byte)((e.seqNum / 256 / 256 / 256) % 256);
-		buf[4] = (byte)(e.bbId % 256);
-		buf[5] = (byte)((e.bbId / 256) % 256);
-		buf[6] = (byte)((e.bbId / 256 / 256) % 256);
-		buf[7] = (byte)((e.bbId / 256 / 256 / 256) % 256);
 		for (int i = 0; i<hosts.length; i++) {
 			try {
-				senderStreams[i].write(buf);
+				msgSer.serialize(new Msg(e), senderDataOutputViews[i]);
 				senderStreams[i].flush();
 			} catch (IOException e1) {
 				throw new RuntimeException(e1);
@@ -196,9 +196,12 @@ public class CFLManager {
 
 		Socket socket;
 
-		public ConnReader(Socket socket, int i) {
+		int connID;
+
+		public ConnReader(Socket socket, int connID) {
 			this.socket = socket;
-			thread = new Thread(this, "ConnReader_" + i);
+			this.connID = connID;
+			thread = new Thread(this, "ConnReader_" + connID);
 			thread.start();
 		}
 
@@ -206,30 +209,22 @@ public class CFLManager {
 		public void run() {
 			try {
 				InputStream ins = socket.getInputStream();
-				//InputStreamReader insr = new InputStreamReader(ins);
-				//BufferedReader inbr = new BufferedReader(insr);
-				while(true){
-					final int bufLen = 8;
-					byte[] buf = new byte[bufLen];
-					int i;
-					for(i=0; i<bufLen;){
-						int numRead = ins.read(buf,i,bufLen-i);
-						if(numRead == -1) {
-							// connection was closed
-							LOG.info("GGG Connection to " + socket.getRemoteSocketAddress() + " was closed remotely (asszem).");
-							return;
-						}
-						i += numRead;
+				DataInputViewStreamWrapper divsw = new DataInputViewStreamWrapper(ins);
+				while (true) {
+					Msg msg = msgSer.deserialize(divsw);
+					LOG.info("GGG Got " + msg);
+					if (msg.cflElement != null) {
+						addTentative(msg.cflElement.seqNum, msg.cflElement.bbId); // will do the callbacks
+					} else if (msg.consumed != null) {
+						assert coordinator;
+						consumedRemote(msg.consumed.bagID, msg.consumed.numElements, connID);
+					} else if (msg.produced != null) {
+						assert coordinator;
+						producedRemote(msg.produced.bagID, msg.produced.inpIDs, msg.produced.numElements, msg.produced.para, connID);
+					} else if (msg.closeInputBag != null) {
+						assert !coordinator;
+						closeInputBagRemote(msg.closeInputBag.bagID);
 					}
-					assert i == bufLen;
-
-					assert ByteOrder.nativeOrder() == ByteOrder.LITTLE_ENDIAN;
-					// little endian: a szam vege van a kisebb cimeken
-					int seqNum = buf[0] + 256 * buf[1] + 256 * 256 * buf[2] + 256 * 256 * 256 * buf[3];
-					int bbId = buf[4] + 256 * buf[5] + 256 * 256 * buf[6] + 256 * 256 * 256 * buf[7];
-					CFLElement e = new CFLElement(seqNum, bbId);
-					LOG.info("GGG Got " + e);
-					addTentative(seqNum, bbId); // will do the callbacks
 				}
 			} catch (IOException e) {
 				throw new RuntimeException(e);
@@ -268,6 +263,9 @@ public class CFLManager {
 			}
 		}
 	}
+
+
+	// --------------------------------------------------------
 
 	// A helyi TM-ben futo operatorok hivjak
 	public synchronized void appendToCFL(int bbId) {
@@ -317,10 +315,302 @@ public class CFLManager {
 
 		tentativeCFL.clear();
 		curCFL.clear();
+
+		cbsToNotifyClose.clear();
+		bagStatuses.clear();
 	}
 
 	public synchronized void specifyTerminalBB(int bbId) {
 		LOG.info("GGG specifyTerminalBB: " + bbId);
 		terminalBB = bbId;
 	}
+
+    // --------------------------------------------------------
+
+
+    private static final class BagStatus {
+
+        public int numProduced = 0, numConsumed = 0;
+		public boolean produceClosed = false, consumeClosed = false;
+
+		// Ezek azert Map-ek, mert tudnunk kell, hogy melyik kapcsolatrol mennyi jott:
+		// Amikor egy bagnek ket inputja van, akkor onnan tudjuk, hogy mikor van kesz a produced,
+		// hogy az inputjainak a consumedConns-jait osszeuniozzuk pontonkent osszeadva.
+		public Map<Integer, Integer> producedConns = new HashMap<>();
+		public Map<Integer, Integer> consumedConns = new HashMap<>();
+
+		public Set<BagID> inputs = new HashSet<>();
+		public Set<BagID> inputTo = new HashSet<>();
+
+    }
+
+    private final Map<BagID, BagStatus> bagStatuses = new HashMap<>();
+
+    private final Map<BagID, List<CFLCallback>> cbsToNotifyClose = new HashMap<>(); // (client-side)
+
+    // kliens -> coordinator
+    public synchronized void consumedLocal(BagID bagID, int numElements, CFLCallback cb) {
+		if (coordinator) {
+			consumedRemote(bagID, numElements, -1);
+		} else {
+			try {
+				msgSer.serialize(new Msg(new Consumed(bagID, numElements)), senderDataOutputViews[0]);
+				senderStreams[0].flush();
+			} catch (IOException e) {
+				throw new RuntimeException(e);
+			}
+		}
+
+        // a CFLCallback-et elmentjuk a bagID-hez, es amikor majd jon a close a coordinatortol, akkor ebbol tudjuk, hogy kiket kell ertesiteni
+		List<CFLCallback> v = cbsToNotifyClose.get(bagID);
+		if (v == null) {
+			ArrayList<CFLCallback> a = new ArrayList<>();
+			a.add(cb);
+			cbsToNotifyClose.put(bagID, a);
+		} else {
+			if (!v.contains(cb)) {
+				// itt azert johet tobbszor, mert tobb subpartitiontol is johet END
+				v.add(cb);
+			}
+		}
+    }
+
+    private synchronized void consumedRemote(BagID bagID, int numElements, int connID) {
+
+		BagStatus s = bagStatuses.get(bagID);
+		if (s == null) {
+			s = new BagStatus();
+			bagStatuses.put(bagID, s);
+		}
+
+		assert !s.consumeClosed;
+
+		if (s.consumedConns.get(connID) == null) {
+			s.consumedConns.put(connID, 1);
+		} else {
+			s.consumedConns.put(connID, s.consumedConns.get(connID) + 1);
+		}
+
+		s.numConsumed += numElements;
+
+		checkForClosingConsumed(bagID, s);
+
+		for (BagID b: s.inputTo) {
+			// azert jo itt a -1, mert ilyenkor biztosan nem source
+			checkForClosingProduced(bagStatuses.get(b), -1);
+		}
+    }
+
+    private void checkForClosingConsumed(BagID bagID, BagStatus s) {
+		if (s.produceClosed) {
+			assert s.numConsumed <= s.numProduced; // (ennek belul kell lennie az if-ben mert kivul a reordering miatt nem biztos, hogy igaz)
+			if (s.numConsumed == s.numProduced) {
+				s.consumeClosed = true;
+				closeInputBagLocal(bagID);
+			}
+		}
+	}
+
+    // kliens -> coordinator
+	public synchronized void producedLocal(BagID bagID, BagID[] inpIDs, int numElements, int para) {
+		assert inpIDs.length <= 2; // ha 0, akkor BagSource
+
+		if (coordinator) {
+			producedRemote(bagID, inpIDs, numElements, para, -1);
+		} else {
+			try {
+				msgSer.serialize(new Msg(new Produced(bagID, inpIDs, numElements, para)), senderDataOutputViews[0]);
+				senderStreams[0].flush();
+			} catch (IOException e) {
+				throw new RuntimeException();
+			}
+		}
+    }
+
+    // hivaskor figyelni kell, hogy null-ok legyenek az inp-ek, ha nincs ervenyes ertekuk
+    private synchronized void producedRemote(BagID bagID, BagID[] inpIDs, int numElements, int para, int connID) {
+
+		// Get or init BagStatus
+		BagStatus s = bagStatuses.get(bagID);
+		if (s == null) {
+			s = new BagStatus();
+			bagStatuses.put(bagID, s);
+		}
+
+		assert !s.produceClosed;
+
+		// Add to s.inputs, and add to the inputTos of the inputs
+		for (BagID inp: inpIDs) {
+			s.inputs.add(inp);
+			bagStatuses.get(inp).inputTo.add(bagID);
+		}
+		assert s.inputs.size() <= 2;
+
+		// Add to s.numProduced
+		s.numProduced += numElements;
+
+		// Add to s.producedConns
+		if (s.producedConns.get(connID) == null) {
+			s.producedConns.put(connID, 1);
+		} else {
+			s.producedConns.put(connID, s.producedConns.get(connID) + 1);
+		}
+
+		checkForClosingProduced(s, para);
+
+		checkForClosingConsumed(bagID, s);
+    }
+
+    private void checkForClosingProduced(BagStatus s, int para) {
+		if (s.inputs.size() == 0) {
+			// source, tehat mindenhonnan varunk
+			assert para != -1;
+			int totalProducedMsgs = 0;
+			for (Map.Entry<Integer, Integer> e: s.producedConns.entrySet()) {
+				assert e.getValue() > 0;
+				totalProducedMsgs += e.getValue();
+			}
+			assert totalProducedMsgs <= para;
+			if (totalProducedMsgs == para) {
+				s.produceClosed = true;
+			}
+		} else {
+			boolean needMore = false;
+			// Ebbe rakjuk ossze az inputok consumedConns-jait
+			Map<Integer, Integer> needProduced = new HashMap<>();
+			for (BagID inp: s.inputs) {
+				if (!bagStatuses.get(inp).consumeClosed) {
+					needMore = true;
+					break;
+				}
+				for (Map.Entry<Integer, Integer> e: bagStatuses.get(inp).consumedConns.entrySet()) {
+					if (needProduced.get(e.getKey()) == null) {
+						needProduced.put(e.getKey(), e.getValue());
+					} else {
+						needProduced.put(e.getKey(), needProduced.get(e.getKey()) + e.getValue());
+					}
+				}
+			}
+			if (!needMore) {
+				// Pontonkent megnezzuk, hogy minden conn-rol eleg jott-e mar
+				for (Map.Entry<Integer, Integer> e : needProduced.entrySet()) {
+					Integer actual = s.producedConns.get(e.getKey());
+					Integer needed = e.getValue();
+					assert actual != null;
+					assert actual <= needed;
+					if (actual < needed) {
+						needMore = true;
+						break;
+					}
+				}
+			}
+			if (!needMore) {
+				s.produceClosed = true;
+			}
+		}
+	}
+
+    // A coordinator a local itt. Az operatorok inputjainak a close-olasat valtja ez ki.
+    private synchronized void closeInputBagLocal(BagID bagID) {
+		for (Integer conn: bagStatuses.get(bagID).consumedConns.keySet()) {
+			sendCloseInputBag(conn, bagID);
+		}
+    }
+
+    private void sendCloseInputBag(int connID, BagID bagID) {
+		// -1 a local, azaz amikor coordinator vagyok
+
+		if (coordinator) {
+			assert connID == -1;
+			closeInputBagRemote(bagID);
+		} else {
+			try {
+				msgSer.serialize(new Msg(new CloseInputBag(bagID)), senderDataOutputViews[connID]);
+				senderStreams[connID].flush();
+			} catch (IOException e) {
+				throw new RuntimeException();
+			}
+		}
+	}
+
+	// (runs on client)
+    private synchronized void closeInputBagRemote(BagID bagID) {
+        for (CFLCallback cb: cbsToNotifyClose.get(bagID)) {
+			cb.notifyCloseInput(bagID);
+		}
+    }
+
+    // --------------------------------
+
+    public static class Msg {
+
+		// These are nullable, and exactly one should be non-null
+		public CFLElement cflElement;
+		public Consumed consumed;
+		public Produced produced;
+		public CloseInputBag closeInputBag;
+
+		public Msg() {}
+
+		public Msg(CFLElement cflElement) {
+			this.cflElement = cflElement;
+		}
+
+		public Msg(Consumed consumed) {
+			this.consumed = consumed;
+		}
+
+		public Msg(Produced produced) {
+			this.produced = produced;
+		}
+
+		public Msg(CloseInputBag closeInputBag) {
+			this.closeInputBag = closeInputBag;
+		}
+	}
+
+	private static final TypeSerializer<Msg> msgSer = TypeInformation.of(Msg.class).createSerializer(new ExecutionConfig());
+
+	public static class Consumed {
+
+		public BagID bagID;
+		public int numElements;
+
+		public Consumed() {}
+
+		public Consumed(BagID bagID, int numElements) {
+			this.bagID = bagID;
+			this.numElements = numElements;
+		}
+	}
+
+	public static class Produced {
+
+		public BagID bagID;
+		public BagID[] inpIDs;
+		public int numElements;
+		public int para;
+
+		public Produced() {}
+
+		public Produced(BagID bagID, BagID[] inpIDs, int numElements, int para) {
+			this.bagID = bagID;
+			this.inpIDs = inpIDs;
+			this.numElements = numElements;
+			this.para = para;
+		}
+	}
+
+	public static class CloseInputBag {
+
+		public BagID bagID;
+
+		public CloseInputBag() {}
+
+		public CloseInputBag(BagID bagID) {
+			this.bagID = bagID;
+		}
+	}
+
+	// --------------------------------
 }
