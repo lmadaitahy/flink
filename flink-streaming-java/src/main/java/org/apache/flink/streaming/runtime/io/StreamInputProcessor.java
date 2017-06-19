@@ -42,6 +42,7 @@ import org.apache.flink.runtime.plugable.NonReusingDeserializationDelegate;
 import org.apache.flink.streaming.api.CheckpointingMode;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.api.watermark.Watermark;
+import org.apache.flink.streaming.runtime.gg.NoAutoClose;
 import org.apache.flink.streaming.runtime.streamrecord.StreamElement;
 import org.apache.flink.streaming.runtime.streamrecord.StreamElementSerializer;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
@@ -238,11 +239,16 @@ public class StreamInputProcessor<IN> {
 				}
 			}
 			else {
-				isFinished = true;
-				if (!barrierHandler.isEmpty()) {
-					throw new IllegalStateException("Trailing data in checkpoint barrier handler.");
+				if (!(streamOperator instanceof NoAutoClose)) {
+					isFinished = true;
+					if (!barrierHandler.isEmpty()) {
+						throw new IllegalStateException("Trailing data in checkpoint barrier handler.");
+					}
+					return false;
+				} else {
+					Thread.sleep(100);
+					return true;
 				}
-				return false;
 			}
 		}
 	}
