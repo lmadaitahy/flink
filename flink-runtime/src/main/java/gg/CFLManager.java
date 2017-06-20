@@ -512,30 +512,50 @@ public class CFLManager {
 
     // A coordinator a local itt. Az operatorok inputjainak a close-olasat valtja ez ki.
     private synchronized void closeInputBagLocal(BagID bagID) {
-		for (Integer conn: bagStatuses.get(bagID).consumedConns.keySet()) {
-			sendCloseInputBag(conn, bagID);
+//		for (Integer conn: bagStatuses.get(bagID).consumedConns.keySet()) {
+//			sendCloseInputBag(conn, bagID);
+//		}
+
+		assert coordinator;
+
+		closeInputBagRemote(bagID);
+
+		for (int i = 0; i<hosts.length; i++) {
+			try {
+				msgSer.serialize(new Msg(new CloseInputBag(bagID)), senderDataOutputViews[i]);
+				senderStreams[i].flush();
+			} catch (IOException e1) {
+				throw new RuntimeException(e1);
+			}
 		}
     }
 
-    private void sendCloseInputBag(int connID, BagID bagID) {
-		// -1 a local, azaz amikor coordinator vagyok
-
-		if (coordinator) {
-			assert connID == -1;
-			closeInputBagRemote(bagID);
-		} else {
-			try {
-				msgSer.serialize(new Msg(new CloseInputBag(bagID)), senderDataOutputViews[connID]);
-				senderStreams[connID].flush();
-			} catch (IOException e) {
-				throw new RuntimeException();
-			}
-		}
-	}
+//    private void sendCloseInputBag(int connID, BagID bagID) {
+//		// -1 a local, azaz amikor coordinator vagyok
+//
+//		if (coordinator) {
+//			assert connID == -1;  // amugy ez mintha rossz lenne: ha coordinator vagyunk, akkor csak akkor kene itt kozvetlenul hivni, ha a connID == -1
+//			closeInputBagRemote(bagID);
+//		} else {
+//			try {
+//				msgSer.serialize(new Msg(new CloseInputBag(bagID)), senderDataOutputViews[connID]);
+//				senderStreams[connID].flush();
+//			} catch (IOException e) {
+//				throw new RuntimeException();
+//			}
+//		}
+//	}
 
 	// (runs on client)
     private synchronized void closeInputBagRemote(BagID bagID) {
-        for (CFLCallback cb: cbsToNotifyClose.get(bagID)) {
+//        for (CFLCallback cb: cbsToNotifyClose.get(bagID)) {
+//			cb.notifyCloseInput(bagID);
+//		}
+
+		LOG.info("closeInputBagRemote " + bagID);
+
+		ArrayList<CFLCallback> origCallbacks = new ArrayList<>(callbacks);
+		for (CFLCallback cb: origCallbacks) {
 			cb.notifyCloseInput(bagID);
 		}
     }

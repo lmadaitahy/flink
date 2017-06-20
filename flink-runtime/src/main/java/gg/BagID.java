@@ -5,6 +5,8 @@ public class BagID {
     public int cflSize;
     public int opID;
 
+    public BagID() {}
+
     public BagID(int cflSize, int opID) {
         this.cflSize = cflSize;
         this.opID = opID;
