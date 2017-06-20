@@ -333,11 +333,6 @@ public class CFLManager {
         public int numProduced = 0, numConsumed = 0;
 		public boolean produceClosed = false, consumeClosed = false;
 
-//		// Ezek azert Map-ek, mert tudnunk kell, hogy melyik kapcsolatrol mennyi jott:
-//		// Amikor egy bagnek ket inputja van, akkor onnan tudjuk, hogy mikor van kesz a produced,
-//		// hogy az inputjainak a consumedConns-jait osszeuniozzuk pontonkent osszeadva.
-//		public Map<Integer, Integer> producedConns = new HashMap<>();
-//		public Map<Integer, Integer> consumedConns = new HashMap<>();
 		public Set<Integer> producedSubtasks = new HashSet<>();
 		public Set<Integer> consumedSubtasks = new HashSet<>();
 
@@ -387,11 +382,6 @@ public class CFLManager {
 
 		assert !s.consumeClosed;
 
-//		if (s.consumedConns.get(connID) == null) {
-//			s.consumedConns.put(connID, 1);
-//		} else {
-//			s.consumedConns.put(connID, s.consumedConns.get(connID) + 1);
-//		}
 		s.consumedSubtasks.add(subtaskIndex);
 
 		s.numConsumed += numElements;
@@ -430,7 +420,6 @@ public class CFLManager {
 		}
     }
 
-    // hivaskor figyelni kell, hogy null-ok legyenek az inp-ek, ha nincs ervenyes ertekuk
     private synchronized void producedRemote(BagID bagID, BagID[] inpIDs, int numElements, int para, int connID, int subtaskIndex) {
 
 		// Get or init BagStatus
@@ -452,12 +441,6 @@ public class CFLManager {
 		// Add to s.numProduced
 		s.numProduced += numElements;
 
-//		// Add to s.producedConns
-//		if (s.producedConns.get(connID) == null) {
-//			s.producedConns.put(connID, 1);
-//		} else {
-//			s.producedConns.put(connID, s.producedConns.get(connID) + 1);
-//		}
 		// Add to s.producedSubtasks
 		assert !s.producedSubtasks.contains(subtaskIndex);
 		s.producedSubtasks.add(subtaskIndex);
@@ -471,11 +454,6 @@ public class CFLManager {
 		if (s.inputs.size() == 0) {
 			// source, tehat mindenhonnan varunk
 			assert para != -1;
-//			int totalProducedMsgs = 0;
-//			for (Map.Entry<Integer, Integer> e: s.producedConns.entrySet()) {
-//				assert e.getValue() > 0;
-//				totalProducedMsgs += e.getValue();
-//			}
 			int totalProducedMsgs = s.producedSubtasks.size();
 			assert totalProducedMsgs <= para;
 			if (totalProducedMsgs == para) {
@@ -490,27 +468,9 @@ public class CFLManager {
 					needMore = true;
 					break;
 				}
-//				for (Map.Entry<Integer, Integer> e: bagStatuses.get(inp).consumedConns.entrySet()) {
-//					if (needProduced.get(e.getKey()) == null) {
-//						needProduced.put(e.getKey(), e.getValue());
-//					} else {
-//						needProduced.put(e.getKey(), needProduced.get(e.getKey()) + e.getValue());
-//					}
-//				}
 				needProduced.addAll(bagStatuses.get(inp).consumedSubtasks);
 			}
 			if (!needMore) {
-//				// Pontonkent megnezzuk, hogy minden conn-rol eleg jott-e mar
-//				for (Map.Entry<Integer, Integer> e : needProduced.entrySet()) {
-//					Integer actual = s.producedConns.get(e.getKey());
-//					Integer needed = e.getValue();
-//					assert actual != null;
-//					assert actual <= needed;
-//					if (actual < needed) {
-//						needMore = true;
-//						break;
-//					}
-//				}
 				int needed = needProduced.size();
 				int actual = s.producedSubtasks.size();
 				assert actual <= needed; // This should be true, because we already checked consumeClose above
@@ -526,10 +486,6 @@ public class CFLManager {
 
     // A coordinator a local itt. Az operatorok inputjainak a close-olasat valtja ez ki.
     private synchronized void closeInputBagLocal(BagID bagID) {
-//		for (Integer conn: bagStatuses.get(bagID).consumedConns.keySet()) {
-//			sendCloseInputBag(conn, bagID);
-//		}
-
 		assert coordinator;
 
 		closeInputBagRemote(bagID);
@@ -544,28 +500,8 @@ public class CFLManager {
 		}
     }
 
-//    private void sendCloseInputBag(int connID, BagID bagID) {
-//		// -1 a local, azaz amikor coordinator vagyok
-//
-//		if (coordinator) {
-//			assert connID == -1;  // amugy ez mintha rossz lenne: ha coordinator vagyunk, akkor csak akkor kene itt kozvetlenul hivni, ha a connID == -1
-//			closeInputBagRemote(bagID);
-//		} else {
-//			try {
-//				msgSer.serialize(new Msg(new CloseInputBag(bagID)), senderDataOutputViews[connID]);
-//				senderStreams[connID].flush();
-//			} catch (IOException e) {
-//				throw new RuntimeException();
-//			}
-//		}
-//	}
-
 	// (runs on client)
     private synchronized void closeInputBagRemote(BagID bagID) {
-//        for (CFLCallback cb: cbsToNotifyClose.get(bagID)) {
-//			cb.notifyCloseInput(bagID);
-//		}
-
 		LOG.info("closeInputBagRemote " + bagID);
 
 		ArrayList<CFLCallback> origCallbacks = new ArrayList<>(callbacks);
