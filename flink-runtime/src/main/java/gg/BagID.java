@@ -31,4 +31,12 @@ public class BagID {
         result = 31 * result + opID;
         return result;
     }
+
+    @Override
+    public String toString() {
+        return "BagID{" +
+                "cflSize=" + cflSize +
+                ", opID=" + opID +
+                '}';
+    }
 }

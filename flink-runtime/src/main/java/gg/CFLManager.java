@@ -367,6 +367,8 @@ public class CFLManager {
     }
 
     private synchronized void consumedRemote(BagID bagID, int numElements, int subtaskIndex, int opID) {
+		LOG.info("consumedRemote(bagID = " + bagID + ", numElements = " + numElements + ", opID = " + opID + ")");
+
     	BagStatus s = bagStatuses.get(bagID);
 		BagIDAndOpID key = new BagIDAndOpID(bagID, opID);
 		BagConsumptionStatus c = bagConsumedStatuses.get(key);
@@ -393,6 +395,7 @@ public class CFLManager {
 
     private void checkForClosingConsumed(BagID bagID, BagStatus s, BagConsumptionStatus c, int opID) {
 		if (s.produceClosed) {
+			LOG.info("checkForClosingConsumed(" + bagID + ", opID = " + opID + "): numConsumed = " + c.numConsumed + ", numProduced = " + s.numProduced);
 			assert c.numConsumed <= s.numProduced; // (ennek belul kell lennie az if-ben mert kivul a reordering miatt nem biztos, hogy igaz)
 			if (c.numConsumed == s.numProduced) {
 				c.consumeClosed = true;
@@ -418,6 +421,7 @@ public class CFLManager {
     }
 
     private synchronized void producedRemote(BagID bagID, BagID[] inpIDs, int numElements, int para, int subtaskIndex, int opID) {
+    	LOG.info("producedRemote(bagID = " + bagID + ", numElements = " + numElements + ", opID = " + opID + ")");
 
 		// Get or init BagStatus
 		BagStatus s = bagStatuses.get(bagID);
@@ -472,6 +476,7 @@ public class CFLManager {
 			if (!needMore) {
 				int needed = needProduced.size();
 				int actual = s.producedSubtasks.size();
+				LOG.info("checkForClosingProduced(" + s + ", opID = " + opID + "): actual = " + actual + ", needed = " + needed);
 				assert actual <= needed; // This should be true, because we already checked consumeClose above
 				if (actual < needed) {
 					needMore = true;
@@ -501,7 +506,7 @@ public class CFLManager {
 
 	// (runs on client)
     private synchronized void closeInputBagRemote(BagID bagID, int opID) {
-		LOG.info("closeInputBagRemote " + bagID);
+		LOG.info("closeInputBagRemote(" + bagID + ", " + opID +")");
 
 		ArrayList<CFLCallback> origCallbacks = new ArrayList<>(callbacks);
 		for (CFLCallback cb: origCallbacks) {
