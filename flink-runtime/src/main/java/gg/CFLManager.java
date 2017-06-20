@@ -316,7 +316,6 @@ public class CFLManager {
 		tentativeCFL.clear();
 		curCFL.clear();
 
-		cbsToNotifyClose.clear();
 		bagStatuses.clear();
 	}
 
@@ -343,8 +342,6 @@ public class CFLManager {
 
     private final Map<BagID, BagStatus> bagStatuses = new HashMap<>();
 
-    private final Map<BagID, List<CFLCallback>> cbsToNotifyClose = new HashMap<>(); // (client-side)
-
     // kliens -> coordinator
     public synchronized void consumedLocal(BagID bagID, int numElements, CFLCallback cb, int subtaskIndex) {
 		if (coordinator) {
@@ -355,19 +352,6 @@ public class CFLManager {
 				senderStreams[0].flush();
 			} catch (IOException e) {
 				throw new RuntimeException(e);
-			}
-		}
-
-        // a CFLCallback-et elmentjuk a bagID-hez, es amikor majd jon a close a coordinatortol, akkor ebbol tudjuk, hogy kiket kell ertesiteni
-		List<CFLCallback> v = cbsToNotifyClose.get(bagID);
-		if (v == null) {
-			ArrayList<CFLCallback> a = new ArrayList<>();
-			a.add(cb);
-			cbsToNotifyClose.put(bagID, a);
-		} else {
-			if (!v.contains(cb)) {
-				// itt azert johet tobbszor, mert tobb subpartitiontol is johet END
-				v.add(cb);
 			}
 		}
     }
