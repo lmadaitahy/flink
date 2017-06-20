@@ -217,7 +217,7 @@ public class CFLManager {
 						addTentative(msg.cflElement.seqNum, msg.cflElement.bbId); // will do the callbacks
 					} else if (msg.consumed != null) {
 						assert coordinator;
-						consumedRemote(msg.consumed.bagID, msg.consumed.numElements, connID, msg.consumed.subtaskIndex);
+						consumedRemote(msg.consumed.bagID, msg.consumed.numElements, msg.consumed.subtaskIndex);
 					} else if (msg.produced != null) {
 						assert coordinator;
 						producedRemote(msg.produced.bagID, msg.produced.inpIDs, msg.produced.numElements, msg.produced.para, connID, msg.produced.subtaskIndex);
@@ -343,9 +343,9 @@ public class CFLManager {
     private final Map<BagID, BagStatus> bagStatuses = new HashMap<>();
 
     // kliens -> coordinator
-    public synchronized void consumedLocal(BagID bagID, int numElements, CFLCallback cb, int subtaskIndex) {
+    public synchronized void consumedLocal(BagID bagID, int numElements, int subtaskIndex) {
 		if (coordinator) {
-			consumedRemote(bagID, numElements, -1, subtaskIndex);
+			consumedRemote(bagID, numElements, subtaskIndex);
 		} else {
 			try {
 				msgSer.serialize(new Msg(new Consumed(bagID, numElements, subtaskIndex)), senderDataOutputViews[0]);
@@ -356,7 +356,7 @@ public class CFLManager {
 		}
     }
 
-    private synchronized void consumedRemote(BagID bagID, int numElements, int connID, int subtaskIndex) {
+    private synchronized void consumedRemote(BagID bagID, int numElements, int subtaskIndex) {
 
 		BagStatus s = bagStatuses.get(bagID);
 		if (s == null) {
@@ -445,7 +445,7 @@ public class CFLManager {
 			}
 		} else {
 			boolean needMore = false;
-			// Ebbe rakjuk ossze az inputok consumedConns-jait
+			// Ebbe rakjuk ossze az inputok consumedSubtasks-jait
 			Set<Integer> needProduced = new HashSet<>();
 			for (BagID inp: s.inputs) {
 				if (!bagStatuses.get(inp).consumeClosed) {
