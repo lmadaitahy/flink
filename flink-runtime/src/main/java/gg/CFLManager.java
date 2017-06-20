@@ -217,13 +217,13 @@ public class CFLManager {
 						addTentative(msg.cflElement.seqNum, msg.cflElement.bbId); // will do the callbacks
 					} else if (msg.consumed != null) {
 						assert coordinator;
-						consumedRemote(msg.consumed.bagID, msg.consumed.numElements, msg.consumed.subtaskIndex);
+						consumedRemote(msg.consumed.bagID, msg.consumed.numElements, msg.consumed.subtaskIndex, msg.consumed.opID);
 					} else if (msg.produced != null) {
 						assert coordinator;
-						producedRemote(msg.produced.bagID, msg.produced.inpIDs, msg.produced.numElements, msg.produced.para, connID, msg.produced.subtaskIndex);
+						producedRemote(msg.produced.bagID, msg.produced.inpIDs, msg.produced.numElements, msg.produced.para, msg.produced.subtaskIndex, msg.produced.opID);
 					} else if (msg.closeInputBag != null) {
 						assert !coordinator;
-						closeInputBagRemote(msg.closeInputBag.bagID);
+						closeInputBagRemote(msg.closeInputBag.bagID, msg.closeInputBag.opID);
 					}
 				}
 			} catch (IOException e) {
@@ -317,6 +317,7 @@ public class CFLManager {
 		curCFL.clear();
 
 		bagStatuses.clear();
+		bagConsumedStatuses.clear();
 	}
 
 	public synchronized void specifyTerminalBB(int bbId) {
@@ -329,26 +330,35 @@ public class CFLManager {
 
     private static final class BagStatus {
 
-        public int numProduced = 0, numConsumed = 0;
-		public boolean produceClosed = false, consumeClosed = false;
+        public int numProduced = 0;
+		public boolean produceClosed = false;
 
 		public Set<Integer> producedSubtasks = new HashSet<>();
-		public Set<Integer> consumedSubtasks = new HashSet<>();
 
 		public Set<BagID> inputs = new HashSet<>();
 		public Set<BagID> inputTo = new HashSet<>();
-
+		public Set<Integer> consumedBy = new HashSet<>();
     }
+
+	private static final class BagConsumptionStatus {
+
+		public int numConsumed = 0;
+		public boolean consumeClosed = false;
+
+		public Set<Integer> consumedSubtasks = new HashSet<>();
+	}
 
     private final Map<BagID, BagStatus> bagStatuses = new HashMap<>();
 
+	private final Map<BagIDAndOpID, BagConsumptionStatus> bagConsumedStatuses = new HashMap<>();
+
     // kliens -> coordinator
-    public synchronized void consumedLocal(BagID bagID, int numElements, int subtaskIndex) {
+    public synchronized void consumedLocal(BagID bagID, int numElements, int subtaskIndex, int opID) {
 		if (coordinator) {
-			consumedRemote(bagID, numElements, subtaskIndex);
+			consumedRemote(bagID, numElements, subtaskIndex, opID);
 		} else {
 			try {
-				msgSer.serialize(new Msg(new Consumed(bagID, numElements, subtaskIndex)), senderDataOutputViews[0]);
+				msgSer.serialize(new Msg(new Consumed(bagID, numElements, subtaskIndex, opID)), senderDataOutputViews[0]);
 				senderStreams[0].flush();
 			} catch (IOException e) {
 				throw new RuntimeException(e);
@@ -356,47 +366,50 @@ public class CFLManager {
 		}
     }
 
-    private synchronized void consumedRemote(BagID bagID, int numElements, int subtaskIndex) {
-
-		BagStatus s = bagStatuses.get(bagID);
-		if (s == null) {
-			s = new BagStatus();
-			bagStatuses.put(bagID, s);
+    private synchronized void consumedRemote(BagID bagID, int numElements, int subtaskIndex, int opID) {
+    	BagStatus s = bagStatuses.get(bagID);
+		BagIDAndOpID key = new BagIDAndOpID(bagID, opID);
+		BagConsumptionStatus c = bagConsumedStatuses.get(key);
+		if (c == null) {
+			c = new BagConsumptionStatus();
+			bagConsumedStatuses.put(key, c);
 		}
 
-		assert !s.consumeClosed;
+		assert !c.consumeClosed;
 
-		s.consumedSubtasks.add(subtaskIndex);
+		s.consumedBy.add(opID);
 
-		s.numConsumed += numElements;
+		c.consumedSubtasks.add(subtaskIndex);
 
-		checkForClosingConsumed(bagID, s);
+		c.numConsumed += numElements;
 
-		for (BagID b: s.inputTo) {
+		checkForClosingConsumed(bagID, s, c, opID);
+
+		for (BagID b: bagStatuses.get(bagID).inputTo) {
 			// azert jo itt a -1, mert ilyenkor biztosan nem source
-			checkForClosingProduced(bagStatuses.get(b), -1);
+			checkForClosingProduced(bagStatuses.get(b), -1, opID);
 		}
     }
 
-    private void checkForClosingConsumed(BagID bagID, BagStatus s) {
+    private void checkForClosingConsumed(BagID bagID, BagStatus s, BagConsumptionStatus c, int opID) {
 		if (s.produceClosed) {
-			assert s.numConsumed <= s.numProduced; // (ennek belul kell lennie az if-ben mert kivul a reordering miatt nem biztos, hogy igaz)
-			if (s.numConsumed == s.numProduced) {
-				s.consumeClosed = true;
-				closeInputBagLocal(bagID);
+			assert c.numConsumed <= s.numProduced; // (ennek belul kell lennie az if-ben mert kivul a reordering miatt nem biztos, hogy igaz)
+			if (c.numConsumed == s.numProduced) {
+				c.consumeClosed = true;
+				closeInputBagLocal(bagID, opID);
 			}
 		}
 	}
 
     // kliens -> coordinator
-	public synchronized void producedLocal(BagID bagID, BagID[] inpIDs, int numElements, int para, int subtaskIndex) {
+	public synchronized void producedLocal(BagID bagID, BagID[] inpIDs, int numElements, int para, int subtaskIndex, int opID) {
 		assert inpIDs.length <= 2; // ha 0, akkor BagSource
 
 		if (coordinator) {
-			producedRemote(bagID, inpIDs, numElements, para, -1, subtaskIndex);
+			producedRemote(bagID, inpIDs, numElements, para, subtaskIndex, opID);
 		} else {
 			try {
-				msgSer.serialize(new Msg(new Produced(bagID, inpIDs, numElements, para, subtaskIndex)), senderDataOutputViews[0]);
+				msgSer.serialize(new Msg(new Produced(bagID, inpIDs, numElements, para, subtaskIndex, opID)), senderDataOutputViews[0]);
 				senderStreams[0].flush();
 			} catch (IOException e) {
 				throw new RuntimeException();
@@ -404,7 +417,7 @@ public class CFLManager {
 		}
     }
 
-    private synchronized void producedRemote(BagID bagID, BagID[] inpIDs, int numElements, int para, int connID, int subtaskIndex) {
+    private synchronized void producedRemote(BagID bagID, BagID[] inpIDs, int numElements, int para, int subtaskIndex, int opID) {
 
 		// Get or init BagStatus
 		BagStatus s = bagStatuses.get(bagID);
@@ -429,12 +442,14 @@ public class CFLManager {
 		assert !s.producedSubtasks.contains(subtaskIndex);
 		s.producedSubtasks.add(subtaskIndex);
 
-		checkForClosingProduced(s, para);
+		checkForClosingProduced(s, para, opID);
 
-		checkForClosingConsumed(bagID, s);
+		for (Integer copID: s.consumedBy) {
+			checkForClosingConsumed(bagID, s, bagConsumedStatuses.get(new BagIDAndOpID(bagID, copID)), copID);
+		}
     }
 
-    private void checkForClosingProduced(BagStatus s, int para) {
+    private void checkForClosingProduced(BagStatus s, int para, int opID) {
 		if (s.inputs.size() == 0) {
 			// source, tehat mindenhonnan varunk
 			assert para != -1;
@@ -448,11 +463,11 @@ public class CFLManager {
 			// Ebbe rakjuk ossze az inputok consumedSubtasks-jait
 			Set<Integer> needProduced = new HashSet<>();
 			for (BagID inp: s.inputs) {
-				if (!bagStatuses.get(inp).consumeClosed) {
+				if (!bagConsumedStatuses.get(new BagIDAndOpID(inp, opID)).consumeClosed) {
 					needMore = true;
 					break;
 				}
-				needProduced.addAll(bagStatuses.get(inp).consumedSubtasks);
+				needProduced.addAll(bagConsumedStatuses.get(new BagIDAndOpID(inp, opID)).consumedSubtasks);
 			}
 			if (!needMore) {
 				int needed = needProduced.size();
@@ -469,14 +484,14 @@ public class CFLManager {
 	}
 
     // A coordinator a local itt. Az operatorok inputjainak a close-olasat valtja ez ki.
-    private synchronized void closeInputBagLocal(BagID bagID) {
+    private synchronized void closeInputBagLocal(BagID bagID, int opID) {
 		assert coordinator;
 
-		closeInputBagRemote(bagID);
+		closeInputBagRemote(bagID, opID);
 
 		for (int i = 0; i<hosts.length; i++) {
 			try {
-				msgSer.serialize(new Msg(new CloseInputBag(bagID)), senderDataOutputViews[i]);
+				msgSer.serialize(new Msg(new CloseInputBag(bagID, opID)), senderDataOutputViews[i]);
 				senderStreams[i].flush();
 			} catch (IOException e1) {
 				throw new RuntimeException(e1);
@@ -485,12 +500,12 @@ public class CFLManager {
     }
 
 	// (runs on client)
-    private synchronized void closeInputBagRemote(BagID bagID) {
+    private synchronized void closeInputBagRemote(BagID bagID, int opID) {
 		LOG.info("closeInputBagRemote " + bagID);
 
 		ArrayList<CFLCallback> origCallbacks = new ArrayList<>(callbacks);
 		for (CFLCallback cb: origCallbacks) {
-			cb.notifyCloseInput(bagID);
+			cb.notifyCloseInput(bagID, opID);
 		}
     }
 
@@ -530,13 +545,15 @@ public class CFLManager {
 		public BagID bagID;
 		public int numElements;
 		public int subtaskIndex;
+		public int opID;
 
 		public Consumed() {}
 
-		public Consumed(BagID bagID, int numElements, int subtaskIndex) {
+		public Consumed(BagID bagID, int numElements, int subtaskIndex, int opID) {
 			this.bagID = bagID;
 			this.numElements = numElements;
 			this.subtaskIndex = subtaskIndex;
+			this.opID = opID;
 		}
 	}
 
@@ -546,27 +563,31 @@ public class CFLManager {
 		public BagID[] inpIDs;
 		public int numElements;
 		public int para;
-		int subtaskIndex;
+		public int subtaskIndex;
+		public int opID;
 
 		public Produced() {}
 
-		public Produced(BagID bagID, BagID[] inpIDs, int numElements, int para, int subtaskIndex) {
+		public Produced(BagID bagID, BagID[] inpIDs, int numElements, int para, int subtaskIndex, int opID) {
 			this.bagID = bagID;
 			this.inpIDs = inpIDs;
 			this.numElements = numElements;
 			this.para = para;
 			this.subtaskIndex = subtaskIndex;
+			this.opID = opID;
 		}
 	}
 
 	public static class CloseInputBag {
 
 		public BagID bagID;
+		public int opID;
 
 		public CloseInputBag() {}
 
-		public CloseInputBag(BagID bagID) {
+		public CloseInputBag(BagID bagID, int opID) {
 			this.bagID = bagID;
+			this.opID = opID;
 		}
 	}
 
