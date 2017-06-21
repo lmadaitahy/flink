@@ -491,6 +491,7 @@ public class CFLManager {
 				BagConsumptionStatus bcs = bagConsumedStatuses.get(new BagIDAndOpID(inp, opID));
 				if (bcs != null) {
 					if (!bcs.consumeClosed) {
+						LOG.info("checkForClosingProduced(" + bagID + ", " + s + ", opID = " + opID + "): needMore, because !bcs.consumeClosed");
 						needMore = true;
 						break;
 					}
@@ -508,9 +509,9 @@ public class CFLManager {
 			if (!needMore) {
 				int needed = needProduced.size();
 				int actual = s.producedSubtasks.size();
-				LOG.info("checkForClosingProduced(" + s + ", opID = " + opID + "): actual = " + actual + ", needed = " + needed);
-				assert actual <= needed; // This should be true, because we already checked consumeClose above
+				assert actual <= needed; // This should be true, because we have already checked consumeClose above
 				if (actual < needed) {
+					LOG.info("checkForClosingProduced(" + bagID + ", " + s + ", opID = " + opID + "): needMore, because actual = " + actual + ", needed = " + needed);
 					needMore = true;
 				}
 			}
