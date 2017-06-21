@@ -10,6 +10,7 @@ import org.apache.flink.runtime.taskmanager.TaskManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -210,25 +211,33 @@ public class CFLManager {
 		@Override
 		public void run() {
 			try {
-				InputStream ins = socket.getInputStream();
-				DataInputViewStreamWrapper divsw = new DataInputViewStreamWrapper(ins);
-				while (true) {
-					Msg msg = msgSer.deserialize(divsw);
-					LOG.info("GGG Got " + msg);
-					if (msg.cflElement != null) {
-						addTentative(msg.cflElement.seqNum, msg.cflElement.bbId); // will do the callbacks
-					} else if (msg.consumed != null) {
-						assert coordinator;
-						consumedRemote(msg.consumed.bagID, msg.consumed.numElements, msg.consumed.subtaskIndex, msg.consumed.opID);
-					} else if (msg.produced != null) {
-						assert coordinator;
-						producedRemote(msg.produced.bagID, msg.produced.inpIDs, msg.produced.numElements, msg.produced.para, msg.produced.subtaskIndex, msg.produced.opID);
-					} else if (msg.closeInputBag != null) {
-						closeInputBagRemote(msg.closeInputBag.bagID, msg.closeInputBag.opID);
+				try {
+					InputStream ins = socket.getInputStream();
+					DataInputViewStreamWrapper divsw = new DataInputViewStreamWrapper(ins);
+					while (true) {
+						Msg msg = msgSer.deserialize(divsw);
+						LOG.info("GGG Got " + msg);
+						if (msg.cflElement != null) {
+							addTentative(msg.cflElement.seqNum, msg.cflElement.bbId); // will do the callbacks
+						} else if (msg.consumed != null) {
+							assert coordinator;
+							consumedRemote(msg.consumed.bagID, msg.consumed.numElements, msg.consumed.subtaskIndex, msg.consumed.opID);
+						} else if (msg.produced != null) {
+							assert coordinator;
+							producedRemote(msg.produced.bagID, msg.produced.inpIDs, msg.produced.numElements, msg.produced.para, msg.produced.subtaskIndex, msg.produced.opID);
+						} else if (msg.closeInputBag != null) {
+							closeInputBagRemote(msg.closeInputBag.bagID, msg.closeInputBag.opID);
+						}
 					}
+				} catch (EOFException e) {
+					// This happens when the other TM shuts down. No need to throw a RuntimeException here, as we are shutting down anyway.
+				} catch (IOException e) {
+					throw new RuntimeException(e);
 				}
-			} catch (IOException e) {
-				throw new RuntimeException(e);
+			} catch (Throwable e) {
+				e.printStackTrace();
+				LOG.error(e.getStackTrace().toString());
+				Runtime.getRuntime().halt(200);
 			}
 		}
 	}
@@ -303,6 +312,10 @@ public class CFLManager {
 		if (curCFL.size() > 0 && curCFL.get(curCFL.size() - 1) == terminalBB) {
 			cb.notifyTerminalBB();
 		}
+
+		for(CloseInputBag cib: closeInputBags) {
+			cb.notifyCloseInput(cib.bagID, cib.opID);
+		}
 	}
 
 	public synchronized void unsubscribe(CFLCallback cb) {
@@ -312,6 +325,7 @@ public class CFLManager {
 		// Arra kene vigyazni, hogy nehogy az legyen, hogy olyankor hiszi azt, hogy mindenki unsubscribe-olt, amikor meg nem mindenki subscribe-olt.
 		// Egyelore figyelmen kivul hagyom ezt a problemat, valszeg nem nagyon fogok belefutni.
 		if (callbacks.isEmpty()) {
+			LOG.info("tm.CFLVoteStop();");
 			tm.CFLVoteStop();
 			setJobID(null);
 		}
@@ -327,6 +341,8 @@ public class CFLManager {
 
 		bagStatuses.clear();
 		bagConsumedStatuses.clear();
+
+		closeInputBags.clear();
 	}
 
 	public synchronized void specifyTerminalBB(int bbId) {
@@ -360,6 +376,8 @@ public class CFLManager {
     private final Map<BagID, BagStatus> bagStatuses = new HashMap<>();
 
 	private final Map<BagIDAndOpID, BagConsumptionStatus> bagConsumedStatuses = new HashMap<>();
+
+	private final List<CloseInputBag> closeInputBags = new ArrayList<>();
 
     // kliens -> coordinator
     public void consumedLocal(BagID bagID, int numElements, int subtaskIndex, int opID) {
@@ -413,11 +431,13 @@ public class CFLManager {
 
     private void checkForClosingConsumed(BagID bagID, BagStatus s, BagConsumptionStatus c, int opID) {
 		if (s.produceClosed) {
-			LOG.info("checkForClosingConsumed(" + bagID + ", opID = " + opID + "): numConsumed = " + c.numConsumed + ", numProduced = " + s.numProduced);
 			assert c.numConsumed <= s.numProduced; // (ennek belul kell lennie az if-ben mert kivul a reordering miatt nem biztos, hogy igaz)
 			if (c.numConsumed == s.numProduced) {
+				LOG.info("checkForClosingConsumed(" + bagID + ", opID = " + opID + "): consumeClosed, because numConsumed = " + c.numConsumed + ", numProduced = " + s.numProduced);
 				c.consumeClosed = true;
 				closeInputBagLocal(bagID, opID);
+			} else {
+				LOG.info("checkForClosingConsumed(" + bagID + ", opID = " + opID + "): needMore, because numConsumed = " + c.numConsumed + ", numProduced = " + s.numProduced);
 			}
 		}
 	}
@@ -543,6 +563,8 @@ public class CFLManager {
 	// (runs on client)
     private synchronized void closeInputBagRemote(BagID bagID, int opID) {
 		LOG.info("closeInputBagRemote(" + bagID + ", " + opID +")");
+
+		closeInputBags.add(new CloseInputBag(bagID, opID));
 
 		ArrayList<CFLCallback> origCallbacks = new ArrayList<>(callbacks);
 		for (CFLCallback cb: origCallbacks) {
