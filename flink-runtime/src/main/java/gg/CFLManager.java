@@ -87,7 +87,9 @@ public class CFLManager {
 
 	private int terminalBB = -1;
 
-	private int cflSendSeqNum = -1000000;
+	private volatile int cflSendSeqNum = -1000000;
+
+	private final Object clientLock = new Object(); // TODO: rename to msgSendLock
 
 	public JobID getJobID() {
 		return jobID;
@@ -269,17 +271,19 @@ public class CFLManager {
 	// --------------------------------------------------------
 
 	// A helyi TM-ben futo operatorok hivjak
-	public synchronized void appendToCFL(int bbId) {
-		assert tentativeCFL.size() == curCFL.size(); // azaz ilyenkor nem lehetnek lyukak
+	public void appendToCFL(int bbId) {
+		synchronized (clientLock) {
+			assert tentativeCFL.size() == curCFL.size(); // azaz ilyenkor nem lehetnek lyukak
 
-		LOG.info("GGG Adding " + bbId + " to CFL (appendToCFL)");
+			LOG.info("GGG Adding " + bbId + " to CFL (appendToCFL)");
 
-		//tentativeCFL.add(bbId);
-		//curCFL.add(bbId);
-		//sendElement(new CFLElement(curCFL.size()-1, bbId));
-		//notifyCallbacks();
+			//tentativeCFL.add(bbId);
+			//curCFL.add(bbId);
+			//sendElement(new CFLElement(curCFL.size()-1, bbId));
+			//notifyCallbacks();
 
-		sendElement(new CFLElement(cflSendSeqNum++, bbId));
+			sendElement(new CFLElement(cflSendSeqNum++, bbId));
+		}
 	}
 
 	public synchronized void subscribe(CFLCallback cb) {
@@ -358,23 +362,32 @@ public class CFLManager {
 	private final Map<BagIDAndOpID, BagConsumptionStatus> bagConsumedStatuses = new HashMap<>();
 
     // kliens -> coordinator
-    public synchronized void consumedLocal(BagID bagID, int numElements, int subtaskIndex, int opID) {
-//		if (coordinator) {
-//			consumedRemote(bagID, numElements, subtaskIndex, opID);
-//		} else {
-			try {
-				msgSer.serialize(new Msg(new Consumed(bagID, numElements, subtaskIndex, opID)), senderDataOutputViews[0]);
-				senderStreams[0].flush();
-			} catch (IOException e) {
-				throw new RuntimeException(e);
-			}
-//		}
+    public void consumedLocal(BagID bagID, int numElements, int subtaskIndex, int opID) {
+		synchronized (clientLock) {
+	//		if (coordinator) {
+	//			consumedRemote(bagID, numElements, subtaskIndex, opID);
+	//		} else {
+				try {
+					msgSer.serialize(new Msg(new Consumed(bagID, numElements, subtaskIndex, opID)), senderDataOutputViews[0]);
+					senderStreams[0].flush();
+				} catch (IOException e) {
+					throw new RuntimeException(e);
+				}
+	//		}
+		}
     }
 
     private synchronized void consumedRemote(BagID bagID, int numElements, int subtaskIndex, int opID) {
 		LOG.info("consumedRemote(bagID = " + bagID + ", numElements = " + numElements + ", opID = " + opID + ")");
 
-    	BagStatus s = bagStatuses.get(bagID);
+		// Get or init BagStatus
+		BagStatus s = bagStatuses.get(bagID);
+		if (s == null) {
+			s = new BagStatus();
+			bagStatuses.put(bagID, s);
+		}
+
+		// Get or init BagConsumptionStatus
 		BagIDAndOpID key = new BagIDAndOpID(bagID, opID);
 		BagConsumptionStatus c = bagConsumedStatuses.get(key);
 		if (c == null) {
@@ -394,7 +407,7 @@ public class CFLManager {
 
 		for (BagID b: bagStatuses.get(bagID).inputTo) {
 			// azert jo itt a -1, mert ilyenkor biztosan nem source
-			checkForClosingProduced(bagStatuses.get(b), -1, opID);
+			checkForClosingProduced(b, bagStatuses.get(b), -1, opID);
 		}
     }
 
@@ -410,19 +423,21 @@ public class CFLManager {
 	}
 
     // kliens -> coordinator
-	public synchronized void producedLocal(BagID bagID, BagID[] inpIDs, int numElements, int para, int subtaskIndex, int opID) {
-		assert inpIDs.length <= 2; // ha 0, akkor BagSource
+	public void producedLocal(BagID bagID, BagID[] inpIDs, int numElements, int para, int subtaskIndex, int opID) {
+		synchronized (clientLock) {
+			assert inpIDs.length <= 2; // ha 0, akkor BagSource
 
-//		if (coordinator) {
-//			producedRemote(bagID, inpIDs, numElements, para, subtaskIndex, opID);
-//		} else {
-			try {
-				msgSer.serialize(new Msg(new Produced(bagID, inpIDs, numElements, para, subtaskIndex, opID)), senderDataOutputViews[0]);
-				senderStreams[0].flush();
-			} catch (IOException e) {
-				throw new RuntimeException();
-			}
-//		}
+	//		if (coordinator) {
+	//			producedRemote(bagID, inpIDs, numElements, para, subtaskIndex, opID);
+	//		} else {
+				try {
+					msgSer.serialize(new Msg(new Produced(bagID, inpIDs, numElements, para, subtaskIndex, opID)), senderDataOutputViews[0]);
+					senderStreams[0].flush();
+				} catch (IOException e) {
+					throw new RuntimeException();
+				}
+	//		}
+		}
     }
 
     private synchronized void producedRemote(BagID bagID, BagID[] inpIDs, int numElements, int para, int subtaskIndex, int opID) {
@@ -451,20 +466,21 @@ public class CFLManager {
 		assert !s.producedSubtasks.contains(subtaskIndex);
 		s.producedSubtasks.add(subtaskIndex);
 
-		checkForClosingProduced(s, para, opID);
+		checkForClosingProduced(bagID, s, para, opID);
 
 		for (Integer copID: s.consumedBy) {
 			checkForClosingConsumed(bagID, s, bagConsumedStatuses.get(new BagIDAndOpID(bagID, copID)), copID);
 		}
     }
 
-    private void checkForClosingProduced(BagStatus s, int para, int opID) {
+    private void checkForClosingProduced(BagID bagID, BagStatus s, int para, int opID) {
 		if (s.inputs.size() == 0) {
 			// source, tehat mindenhonnan varunk
 			assert para != -1;
 			int totalProducedMsgs = s.producedSubtasks.size();
 			assert totalProducedMsgs <= para;
 			if (totalProducedMsgs == para) {
+				LOG.info("produceClose for bag " + bagID + " at op " + opID);
 				s.produceClosed = true;
 			}
 		} else {
@@ -472,11 +488,22 @@ public class CFLManager {
 			// Ebbe rakjuk ossze az inputok consumedSubtasks-jait
 			Set<Integer> needProduced = new HashSet<>();
 			for (BagID inp: s.inputs) {
-				if (!bagConsumedStatuses.get(new BagIDAndOpID(inp, opID)).consumeClosed) {
+				BagConsumptionStatus bcs = bagConsumedStatuses.get(new BagIDAndOpID(inp, opID));
+				if (bcs != null) {
+					if (!bcs.consumeClosed) {
+						needMore = true;
+						break;
+					}
+					needProduced.addAll(bcs.consumedSubtasks);
+				} else {
+					assert false;
+					// Jaa, vagy az van esetleg, hogy nem mindig a termeszetes sorrendben jon a produced es a consumed?
+
+					// This can happen if we have a binary operator that sends produced while it haven't yet consumed from one of its inputs.
+					// Hm, but actually I don't think I have such an operator at the moment.
+					assert s.inputs.size() > 1;
 					needMore = true;
-					break;
 				}
-				needProduced.addAll(bagConsumedStatuses.get(new BagIDAndOpID(inp, opID)).consumedSubtasks);
 			}
 			if (!needMore) {
 				int needed = needProduced.size();
@@ -488,6 +515,7 @@ public class CFLManager {
 				}
 			}
 			if (!needMore) {
+				LOG.info("produceClose for bag " + bagID + " at op " + opID);
 				s.produceClosed = true;
 			}
 		}
@@ -495,16 +523,18 @@ public class CFLManager {
 
     // A coordinator a local itt. Az operatorok inputjainak a close-olasat valtja ez ki.
     private synchronized void closeInputBagLocal(BagID bagID, int opID) {
-		assert coordinator;
+		synchronized (clientLock) { // Azert kell itt ez is, mert kulonben a senderStream-ekben osszekavarodhatnak az uzenetek
+			assert coordinator;
 
-		//closeInputBagRemote(bagID, opID);
+			//closeInputBagRemote(bagID, opID);
 
-		for (int i = 0; i<hosts.length; i++) {
-			try {
-				msgSer.serialize(new Msg(new CloseInputBag(bagID, opID)), senderDataOutputViews[i]);
-				senderStreams[i].flush();
-			} catch (IOException e1) {
-				throw new RuntimeException(e1);
+			for (int i = 0; i < hosts.length; i++) {
+				try {
+					msgSer.serialize(new Msg(new CloseInputBag(bagID, opID)), senderDataOutputViews[i]);
+					senderStreams[i].flush();
+				} catch (IOException e1) {
+					throw new RuntimeException(e1);
+				}
 			}
 		}
     }
