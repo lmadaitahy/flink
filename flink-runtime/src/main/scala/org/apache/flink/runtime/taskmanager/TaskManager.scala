@@ -223,8 +223,8 @@ class TaskManager(
     if (confDir != null) {
       allHosts = scala.io.Source.fromFile(confDir + "/slaves").getLines().toArray
       assert(!allHosts.contains(""))
-      val hostsExceptMe = allHosts.filter(s => s != hostName)
-      CFLManager.create(this, hostsExceptMe, allHosts.head == hostName)
+      //val hostsExceptMe = allHosts.filter(s => s != hostName)
+      CFLManager.create(this, allHosts, allHosts.head == hostName)
 
       if (!allHosts.contains(hostName))
         throw new RuntimeException("A slaves fajlban a 'hostname' altal visszaadott neveknek kell lenniuk")
@@ -236,7 +236,7 @@ class TaskManager(
 
       allHosts = Array("localhost")
 
-      CFLManager.create(this)
+      CFLManager.create(this, allHosts, true)
       CFLManager.tmId = 0
       CFLManager.numAllSlots = numberOfSlots
       CFLManager.numTaskSlotsPerTm = numberOfSlots

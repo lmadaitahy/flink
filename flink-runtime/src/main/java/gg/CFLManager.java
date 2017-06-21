@@ -2,11 +2,9 @@ package gg;
 
 import org.apache.flink.api.common.ExecutionConfig;
 import org.apache.flink.api.common.JobID;
-import org.apache.flink.api.common.typeinfo.TypeInfoFactory;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.common.typeutils.TypeSerializer;
 import org.apache.flink.core.memory.DataInputViewStreamWrapper;
-import org.apache.flink.core.memory.DataOutputView;
 import org.apache.flink.core.memory.DataOutputViewStreamWrapper;
 import org.apache.flink.runtime.taskmanager.TaskManager;
 import org.slf4j.Logger;
@@ -21,7 +19,6 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketAddress;
 import java.net.SocketTimeoutException;
-import java.nio.ByteOrder;
 import java.util.*;
 
 public class CFLManager {
@@ -37,19 +34,19 @@ public class CFLManager {
 	public static int numAllSlots = -1;
 	public static int numTaskSlotsPerTm = -1;
 
-	public static void create(TaskManager tm) {
-		sing = new CFLManager(tm);
-	}
+//	public static void create(TaskManager tm) {
+//		sing = new CFLManager(tm);
+//	}
 
 	public static void create(TaskManager tm, String[] hosts, boolean coordinator) {
 		sing = new CFLManager(tm, hosts, coordinator);
 	}
 
 
-	public CFLManager(TaskManager tm) {
-		// local execution
-		this(tm, new String[]{}, true);
-	}
+//	public CFLManager(TaskManager tm) {
+//		// local execution
+//		this(tm, new String[]{}, true);
+//	}
 
 	public CFLManager(TaskManager tm, String[] hosts, boolean coordinator) {
 		this.tm = tm;
@@ -62,6 +59,7 @@ public class CFLManager {
 
 		senderSockets = new Socket[hosts.length];
 		senderStreams = new OutputStream[hosts.length];
+		senderDataOutputViews = new DataOutputViewStreamWrapper[hosts.length];
 
 		createSenderConnections();
 	}
@@ -88,6 +86,8 @@ public class CFLManager {
 	private List<CFLCallback> callbacks = new ArrayList<>();
 
 	private int terminalBB = -1;
+
+	private int cflSendSeqNum = -1000000;
 
 	public JobID getJobID() {
 		return jobID;
@@ -222,7 +222,6 @@ public class CFLManager {
 						assert coordinator;
 						producedRemote(msg.produced.bagID, msg.produced.inpIDs, msg.produced.numElements, msg.produced.para, msg.produced.subtaskIndex, msg.produced.opID);
 					} else if (msg.closeInputBag != null) {
-						assert !coordinator;
 						closeInputBagRemote(msg.closeInputBag.bagID, msg.closeInputBag.opID);
 					}
 				}
@@ -235,7 +234,9 @@ public class CFLManager {
 	private synchronized void addTentative(int seqNum, int bbId) {
 		while (seqNum >= tentativeCFL.size()) {
 			tentativeCFL.add(null);
+			cflSendSeqNum = Math.max(cflSendSeqNum, seqNum + 1);
 		}
+		assert tentativeCFL.get(seqNum) == null; // (kivenni, ha lesz az UDP-s dolog)
 		tentativeCFL.set(seqNum, bbId);
 
 		for (int i = curCFL.size(); i < tentativeCFL.size(); i++) {
@@ -271,12 +272,14 @@ public class CFLManager {
 	public synchronized void appendToCFL(int bbId) {
 		assert tentativeCFL.size() == curCFL.size(); // azaz ilyenkor nem lehetnek lyukak
 
-		LOG.info("GGG Adding " + bbId + " CFL");
+		LOG.info("GGG Adding " + bbId + " to CFL (appendToCFL)");
 
-		tentativeCFL.add(bbId);
-		curCFL.add(bbId);
-		sendElement(new CFLElement(curCFL.size()-1, bbId));
-		notifyCallbacks();
+		//tentativeCFL.add(bbId);
+		//curCFL.add(bbId);
+		//sendElement(new CFLElement(curCFL.size()-1, bbId));
+		//notifyCallbacks();
+
+		sendElement(new CFLElement(cflSendSeqNum++, bbId));
 	}
 
 	public synchronized void subscribe(CFLCallback cb) {
@@ -316,6 +319,8 @@ public class CFLManager {
 		tentativeCFL.clear();
 		curCFL.clear();
 
+		cflSendSeqNum = 0;
+
 		bagStatuses.clear();
 		bagConsumedStatuses.clear();
 	}
@@ -354,16 +359,16 @@ public class CFLManager {
 
     // kliens -> coordinator
     public synchronized void consumedLocal(BagID bagID, int numElements, int subtaskIndex, int opID) {
-		if (coordinator) {
-			consumedRemote(bagID, numElements, subtaskIndex, opID);
-		} else {
+//		if (coordinator) {
+//			consumedRemote(bagID, numElements, subtaskIndex, opID);
+//		} else {
 			try {
 				msgSer.serialize(new Msg(new Consumed(bagID, numElements, subtaskIndex, opID)), senderDataOutputViews[0]);
 				senderStreams[0].flush();
 			} catch (IOException e) {
 				throw new RuntimeException(e);
 			}
-		}
+//		}
     }
 
     private synchronized void consumedRemote(BagID bagID, int numElements, int subtaskIndex, int opID) {
@@ -408,16 +413,16 @@ public class CFLManager {
 	public synchronized void producedLocal(BagID bagID, BagID[] inpIDs, int numElements, int para, int subtaskIndex, int opID) {
 		assert inpIDs.length <= 2; // ha 0, akkor BagSource
 
-		if (coordinator) {
-			producedRemote(bagID, inpIDs, numElements, para, subtaskIndex, opID);
-		} else {
+//		if (coordinator) {
+//			producedRemote(bagID, inpIDs, numElements, para, subtaskIndex, opID);
+//		} else {
 			try {
 				msgSer.serialize(new Msg(new Produced(bagID, inpIDs, numElements, para, subtaskIndex, opID)), senderDataOutputViews[0]);
 				senderStreams[0].flush();
 			} catch (IOException e) {
 				throw new RuntimeException();
 			}
-		}
+//		}
     }
 
     private synchronized void producedRemote(BagID bagID, BagID[] inpIDs, int numElements, int para, int subtaskIndex, int opID) {
@@ -492,7 +497,7 @@ public class CFLManager {
     private synchronized void closeInputBagLocal(BagID bagID, int opID) {
 		assert coordinator;
 
-		closeInputBagRemote(bagID, opID);
+		//closeInputBagRemote(bagID, opID);
 
 		for (int i = 0; i<hosts.length; i++) {
 			try {
@@ -541,6 +546,16 @@ public class CFLManager {
 		public Msg(CloseInputBag closeInputBag) {
 			this.closeInputBag = closeInputBag;
 		}
+
+		@Override
+		public String toString() {
+			return "Msg{" +
+					"cflElement=" + cflElement +
+					", consumed=" + consumed +
+					", produced=" + produced +
+					", closeInputBag=" + closeInputBag +
+					'}';
+		}
 	}
 
 	private static final TypeSerializer<Msg> msgSer = TypeInformation.of(Msg.class).createSerializer(new ExecutionConfig());
@@ -559,6 +574,16 @@ public class CFLManager {
 			this.numElements = numElements;
 			this.subtaskIndex = subtaskIndex;
 			this.opID = opID;
+		}
+
+		@Override
+		public String toString() {
+			return "Consumed{" +
+					"bagID=" + bagID +
+					", numElements=" + numElements +
+					", subtaskIndex=" + subtaskIndex +
+					", opID=" + opID +
+					'}';
 		}
 	}
 
@@ -581,6 +606,18 @@ public class CFLManager {
 			this.subtaskIndex = subtaskIndex;
 			this.opID = opID;
 		}
+
+		@Override
+		public String toString() {
+			return "Produced{" +
+					"bagID=" + bagID +
+					", inpIDs=" + Arrays.toString(inpIDs) +
+					", numElements=" + numElements +
+					", para=" + para +
+					", subtaskIndex=" + subtaskIndex +
+					", opID=" + opID +
+					'}';
+		}
 	}
 
 	public static class CloseInputBag {
@@ -593,6 +630,14 @@ public class CFLManager {
 		public CloseInputBag(BagID bagID, int opID) {
 			this.bagID = bagID;
 			this.opID = opID;
+		}
+
+		@Override
+		public String toString() {
+			return "CloseInputBag{" +
+					"bagID=" + bagID +
+					", opID=" + opID +
+					'}';
 		}
 	}
 

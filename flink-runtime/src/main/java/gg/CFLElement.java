@@ -5,6 +5,8 @@ public class CFLElement {
 	public int seqNum;
 	public int bbId;
 
+	public CFLElement() {}
+
 	public CFLElement(int seqNum, int bbId) {
 		this.seqNum = seqNum;
 		this.bbId = bbId;
