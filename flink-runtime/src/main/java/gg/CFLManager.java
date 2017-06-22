@@ -64,7 +64,7 @@ public class CFLManager {
 
 		cflSendSeqNum = 0;
 
-		resetNeeded = false;
+		jobCounter = 0;
 
 		createSenderConnections();
 	}
@@ -96,7 +96,9 @@ public class CFLManager {
 
 	private final Object clientLock = new Object(); // TODO: rename to msgSendLock
 
-	private volatile boolean resetNeeded;
+	private volatile int jobCounter = -10;
+
+	private ResetThread resetThread;
 
 	public JobID getJobID() {
 		return jobID;
@@ -159,7 +161,7 @@ public class CFLManager {
 	private void sendElement(CFLElement e) {
 		for (int i = 0; i<hosts.length; i++) {
 			try {
-				msgSer.serialize(new Msg(e), senderDataOutputViews[i]);
+				msgSer.serialize(new Msg(jobCounter, e), senderDataOutputViews[i]);
 				senderStreams[i].flush();
 			} catch (IOException e1) {
 				throw new RuntimeException(e1);
@@ -222,18 +224,31 @@ public class CFLManager {
 					DataInputViewStreamWrapper divsw = new DataInputViewStreamWrapper(ins);
 					while (true) {
 						Msg msg = msgSer.deserialize(divsw);
-						LOG.info("GGG Got " + msg);
-						resetIfNeeded();
-						if (msg.cflElement != null) {
-							addTentative(msg.cflElement.seqNum, msg.cflElement.bbId); // will do the callbacks
-						} else if (msg.consumed != null) {
-							assert coordinator;
-							consumedRemote(msg.consumed.bagID, msg.consumed.numElements, msg.consumed.subtaskIndex, msg.consumed.opID);
-						} else if (msg.produced != null) {
-							assert coordinator;
-							producedRemote(msg.produced.bagID, msg.produced.inpIDs, msg.produced.numElements, msg.produced.para, msg.produced.subtaskIndex, msg.produced.opID);
-						} else if (msg.closeInputBag != null) {
-							closeInputBagRemote(msg.closeInputBag.bagID, msg.closeInputBag.opID);
+						synchronized (CFLManager.this) {
+							LOG.info("GGG Got " + msg);
+
+							if (msg.jobCounter < jobCounter) {
+								// Mondjuk ebbol itt lehet baj, ha vki meg nem kapta meg nem kapta meg a voteStop-hoz eljutashoz szukseges msg-ket.
+								// De most van az a sleep(500) a reset elott, remelhetoleg az biztositja, hogy ne jussunk ide.
+								LOG.info("Old msg, ignoring (msg.jobCounter = " + msg.jobCounter + ", jobCounter = " + jobCounter + ")");
+								continue;
+							}
+							while (msg.jobCounter > jobCounter) {
+								LOG.info("Too new msg, waiting (msg.jobCounter = " + msg.jobCounter + ", jobCounter = " + jobCounter + ")"); // Ilyenkor valojaban a resetre varunk
+								Thread.sleep(100);
+							}
+
+							if (msg.cflElement != null) {
+								addTentative(msg.cflElement.seqNum, msg.cflElement.bbId); // will do the callbacks
+							} else if (msg.consumed != null) {
+								assert coordinator;
+								consumedRemote(msg.consumed.bagID, msg.consumed.numElements, msg.consumed.subtaskIndex, msg.consumed.opID);
+							} else if (msg.produced != null) {
+								assert coordinator;
+								producedRemote(msg.produced.bagID, msg.produced.inpIDs, msg.produced.numElements, msg.produced.para, msg.produced.subtaskIndex, msg.produced.opID);
+							} else if (msg.closeInputBag != null) {
+								closeInputBagRemote(msg.closeInputBag.bagID, msg.closeInputBag.opID);
+							}
 						}
 					}
 				} catch (EOFException e) {
@@ -307,7 +322,7 @@ public class CFLManager {
 		LOG.info("GGG CFLManager.subscribe");
 		assert allIncomingUp && allSenderUp;
 
-		resetIfNeeded();
+		// Maybe there could be a waitForReset here
 
 		callbacks.add(cb);
 
@@ -338,15 +353,27 @@ public class CFLManager {
 			LOG.info("tm.CFLVoteStop();");
 			tm.CFLVoteStop();
 			setJobID(null);
-			resetNeeded = true;
+			resetThread = new ResetThread();
 		}
 	}
 
-	private synchronized void resetIfNeeded() {
-		LOG.info("GGG resetIfNeeded");
-		if (resetNeeded) {
+	private class ResetThread implements Runnable {
+
+		Thread thread;
+
+		public ResetThread() {
+			thread = new Thread(this, "ResetThread");
+			thread.start();
+		}
+
+		@Override
+		public void run() {
+			try {
+				Thread.sleep(500);
+			} catch (InterruptedException e) {
+				throw new RuntimeException();
+			}
 			reset();
-			resetNeeded = false;
 		}
 	}
 
@@ -364,6 +391,8 @@ public class CFLManager {
 		bagConsumedStatuses.clear();
 
 		closeInputBags.clear();
+
+		jobCounter++;
 	}
 
 	public synchronized void specifyTerminalBB(int bbId) {
@@ -407,7 +436,7 @@ public class CFLManager {
 	//			consumedRemote(bagID, numElements, subtaskIndex, opID);
 	//		} else {
 				try {
-					msgSer.serialize(new Msg(new Consumed(bagID, numElements, subtaskIndex, opID)), senderDataOutputViews[0]);
+					msgSer.serialize(new Msg(jobCounter, new Consumed(bagID, numElements, subtaskIndex, opID)), senderDataOutputViews[0]);
 					senderStreams[0].flush();
 				} catch (IOException e) {
 					throw new RuntimeException(e);
@@ -472,7 +501,7 @@ public class CFLManager {
 	//			producedRemote(bagID, inpIDs, numElements, para, subtaskIndex, opID);
 	//		} else {
 				try {
-					msgSer.serialize(new Msg(new Produced(bagID, inpIDs, numElements, para, subtaskIndex, opID)), senderDataOutputViews[0]);
+					msgSer.serialize(new Msg(jobCounter, new Produced(bagID, inpIDs, numElements, para, subtaskIndex, opID)), senderDataOutputViews[0]);
 					senderStreams[0].flush();
 				} catch (IOException e) {
 					throw new RuntimeException();
@@ -572,7 +601,7 @@ public class CFLManager {
 
 			for (int i = 0; i < hosts.length; i++) {
 				try {
-					msgSer.serialize(new Msg(new CloseInputBag(bagID, opID)), senderDataOutputViews[i]);
+					msgSer.serialize(new Msg(jobCounter, new CloseInputBag(bagID, opID)), senderDataOutputViews[i]);
 					senderStreams[i].flush();
 				} catch (IOException e1) {
 					throw new RuntimeException(e1);
@@ -597,6 +626,8 @@ public class CFLManager {
 
     public static class Msg {
 
+		public int jobCounter;
+
 		// These are nullable, and exactly one should be non-null
 		public CFLElement cflElement;
 		public Consumed consumed;
@@ -605,26 +636,31 @@ public class CFLManager {
 
 		public Msg() {}
 
-		public Msg(CFLElement cflElement) {
+		public Msg(int jobCounter, CFLElement cflElement) {
+			this.jobCounter = jobCounter;
 			this.cflElement = cflElement;
 		}
 
-		public Msg(Consumed consumed) {
+		public Msg(int jobCounter, Consumed consumed) {
+			this.jobCounter = jobCounter;
 			this.consumed = consumed;
 		}
 
-		public Msg(Produced produced) {
+		public Msg(int jobCounter, Produced produced) {
+			this.jobCounter = jobCounter;
 			this.produced = produced;
 		}
 
-		public Msg(CloseInputBag closeInputBag) {
+		public Msg(int jobCounter, CloseInputBag closeInputBag) {
+			this.jobCounter = jobCounter;
 			this.closeInputBag = closeInputBag;
 		}
 
 		@Override
 		public String toString() {
 			return "Msg{" +
-					"cflElement=" + cflElement +
+					"jobCounter=" + jobCounter +
+					", cflElement=" + cflElement +
 					", consumed=" + consumed +
 					", produced=" + produced +
 					", closeInputBag=" + closeInputBag +
