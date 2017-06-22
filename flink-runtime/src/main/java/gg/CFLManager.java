@@ -334,6 +334,8 @@ public class CFLManager {
 	public synchronized void resetCFL() {
 		LOG.info("GGG Resetting CFL.");
 
+		assert callbacks.size() == 0;
+
 		tentativeCFL.clear();
 		curCFL.clear();
 
