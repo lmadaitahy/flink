@@ -26,6 +26,8 @@ public class CFLManager {
 
 	protected static final Logger LOG = LoggerFactory.getLogger(CFLManager.class);
 
+	private static boolean logCoord = false;
+
 	private static CFLManager sing = null;
 	public static CFLManager getSing() {return sing;}
 
@@ -105,9 +107,9 @@ public class CFLManager {
 	}
 
 	public void setJobID(JobID jobID) {
-		LOG.info("GGG CFLManager.setJobID to '" + jobID + "'");
+		LOG.info("CFLManager.setJobID to '" + jobID + "'");
 		if (this.jobID != null && !this.jobID.equals(jobID) && jobID != null) {
-			throw new RuntimeException("GGG Csak egy job futhat egyszerre. (old: " + this.jobID + ", new: " + jobID + ")");
+			throw new RuntimeException("Csak egy job futhat egyszerre. (old: " + this.jobID + ", new: " + jobID + ")");
 		}
 		this.jobID = jobID;
 	}
@@ -124,21 +126,21 @@ public class CFLManager {
 					try {
 						socket = new Socket();
 						socket.setPerformancePreferences(0,1,0);
-						LOG.info("GGG Connecting sender connection to " + host + ".");
+						LOG.info("Connecting sender connection to " + host + ".");
 						socket.connect(new InetSocketAddress(host, port), timeout);
-						LOG.info("GGG Sender connection connected to  " + host + ".");
+						LOG.info("Sender connection connected to  " + host + ".");
 						break;
 					} catch (SocketTimeoutException exTimeout) {
-						LOG.info("GGG Sender connection to            " + host + " timed out, retrying...");
+						LOG.info("Sender connection to            " + host + " timed out, retrying...");
 					} catch (ConnectException ex) {
-						LOG.info("GGG Sender connection to            " + host + " was refused, retrying...");
+						LOG.info("Sender connection to            " + host + " was refused, retrying...");
 						try {
 							Thread.sleep(500);
 						} catch (InterruptedException e) {
 							throw new RuntimeException(e);
 						}
 					} catch (IOException e) {
-						LOG.info("GGG Sender connection to            " + host + " caused an IOException, retrying... " + e);
+						LOG.info("Sender connection to            " + host + " caused an IOException, retrying... " + e);
 						try {
 							Thread.sleep(500);
 						} catch (InterruptedException e2) {
@@ -154,7 +156,7 @@ public class CFLManager {
 			}
 			i++;
 		}
-		LOG.info("GGG All sender connections are up.");
+		LOG.info("All sender connections are up.");
 		allSenderUp = true;
 	}
 
@@ -185,15 +187,15 @@ public class CFLManager {
 				serverSocket = new ServerSocket(port);
 				int i = 0;
 				while(i < hosts.length) {
-					LOG.info("GGG Listening for incoming connections " + i);
+					LOG.info("Listening for incoming connections " + i);
 					Socket socket = serverSocket.accept();
 					SocketAddress remoteAddr = socket.getRemoteSocketAddress();
-					LOG.info("GGG Got incoming connection " + i + " from " + remoteAddr);
+					LOG.info("Got incoming connection " + i + " from " + remoteAddr);
 					recvRemoteAddresses[i] = remoteAddr;
 					connReaders[i] = new ConnReader(socket, i);
 					i++;
 				}
-				LOG.info("GGG All incoming connections connected");
+				LOG.info("All incoming connections connected");
 				allIncomingUp = true;
 			} catch (IOException e) {
 				throw new RuntimeException(e);
@@ -225,7 +227,7 @@ public class CFLManager {
 					while (true) {
 						Msg msg = msgSer.deserialize(divsw);
 						synchronized (CFLManager.this) {
-							LOG.info("GGG Got " + msg);
+							if (logCoord) LOG.info("Got " + msg);
 
 							if (msg.jobCounter < jobCounter) {
 								// Mondjuk ebbol itt lehet baj, ha vki meg nem kapta meg nem kapta meg a voteStop-hoz eljutashoz szukseges msg-ket.
@@ -277,7 +279,7 @@ public class CFLManager {
 			if (t == null)
 				break;
 			curCFL.add(t);
-			LOG.info("GGG Adding BBID " + t + " to CFL");
+			LOG.info("Adding BBID " + t + " to CFL");
 			notifyCallbacks();
 			// szoval minden elemnel kuldunk kulon, tehat a subscribereknek sok esetben eleg lehet az utolso elemet nezni
 		}
@@ -307,7 +309,7 @@ public class CFLManager {
 		synchronized (clientLock) {
 			assert tentativeCFL.size() == curCFL.size(); // azaz ilyenkor nem lehetnek lyukak
 
-			LOG.info("GGG Adding " + bbId + " to CFL (appendToCFL)");
+			LOG.info("Adding " + bbId + " to CFL (appendToCFL)");
 
 			//tentativeCFL.add(bbId);
 			//curCFL.add(bbId);
@@ -319,7 +321,7 @@ public class CFLManager {
 	}
 
 	public synchronized void subscribe(CFLCallback cb) {
-		LOG.info("GGG CFLManager.subscribe");
+		LOG.info("CFLManager.subscribe");
 		assert allIncomingUp && allSenderUp;
 
 		// Maybe there could be a waitForReset here
@@ -344,7 +346,7 @@ public class CFLManager {
 	}
 
 	public synchronized void unsubscribe(CFLCallback cb) {
-		LOG.info("GGG CFLManager.unsubscribe");
+		LOG.info("CFLManager.unsubscribe");
 		callbacks.remove(cb);
 
 		// Arra kene vigyazni, hogy nehogy az legyen, hogy olyankor hiszi azt, hogy mindenki unsubscribe-olt, amikor meg nem mindenki subscribe-olt.
@@ -378,7 +380,7 @@ public class CFLManager {
 	}
 
 	private synchronized void reset() {
-		LOG.info("GGG Resetting CFLManager.");
+		LOG.info("Resetting CFLManager.");
 
 		assert callbacks.size() == 0;
 
@@ -396,7 +398,7 @@ public class CFLManager {
 	}
 
 	public synchronized void specifyTerminalBB(int bbId) {
-		LOG.info("GGG specifyTerminalBB: " + bbId);
+		LOG.info("specifyTerminalBB: " + bbId);
 		terminalBB = bbId;
 	}
 
@@ -446,7 +448,7 @@ public class CFLManager {
     }
 
     private synchronized void consumedRemote(BagID bagID, int numElements, int subtaskIndex, int opID) {
-		LOG.info("consumedRemote(bagID = " + bagID + ", numElements = " + numElements + ", opID = " + opID + ")");
+		if (logCoord) LOG.info("consumedRemote(bagID = " + bagID + ", numElements = " + numElements + ", opID = " + opID + ")");
 
 		// Get or init BagStatus
 		BagStatus s = bagStatuses.get(bagID);
@@ -483,11 +485,11 @@ public class CFLManager {
 		if (s.produceClosed) {
 			assert c.numConsumed <= s.numProduced; // (ennek belul kell lennie az if-ben mert kivul a reordering miatt nem biztos, hogy igaz)
 			if (c.numConsumed == s.numProduced) {
-				LOG.info("checkForClosingConsumed(" + bagID + ", opID = " + opID + "): consumeClosed, because numConsumed = " + c.numConsumed + ", numProduced = " + s.numProduced);
+				if (logCoord) LOG.info("checkForClosingConsumed(" + bagID + ", opID = " + opID + "): consumeClosed, because numConsumed = " + c.numConsumed + ", numProduced = " + s.numProduced);
 				c.consumeClosed = true;
 				closeInputBagLocal(bagID, opID);
 			} else {
-				LOG.info("checkForClosingConsumed(" + bagID + ", opID = " + opID + "): needMore, because numConsumed = " + c.numConsumed + ", numProduced = " + s.numProduced);
+				if (logCoord) LOG.info("checkForClosingConsumed(" + bagID + ", opID = " + opID + "): needMore, because numConsumed = " + c.numConsumed + ", numProduced = " + s.numProduced);
 			}
 		}
 	}
@@ -511,7 +513,7 @@ public class CFLManager {
     }
 
     private synchronized void producedRemote(BagID bagID, BagID[] inpIDs, int numElements, int para, int subtaskIndex, int opID) {
-    	LOG.info("producedRemote(bagID = " + bagID + ", numElements = " + numElements + ", opID = " + opID + ")");
+		if (logCoord) LOG.info("producedRemote(bagID = " + bagID + ", numElements = " + numElements + ", opID = " + opID + ")");
 
 		// Get or init BagStatus
 		BagStatus s = bagStatuses.get(bagID);
@@ -550,7 +552,7 @@ public class CFLManager {
 			int totalProducedMsgs = s.producedSubtasks.size();
 			assert totalProducedMsgs <= para;
 			if (totalProducedMsgs == para) {
-				LOG.info("produceClose for bag " + bagID + " at op " + opID);
+				if (logCoord) LOG.info("produceClose for bag " + bagID + " at op " + opID);
 				s.produceClosed = true;
 			}
 		} else {
@@ -561,7 +563,7 @@ public class CFLManager {
 				BagConsumptionStatus bcs = bagConsumedStatuses.get(new BagIDAndOpID(inp, opID));
 				if (bcs != null) {
 					if (!bcs.consumeClosed) {
-						LOG.info("checkForClosingProduced(" + bagID + ", " + s + ", opID = " + opID + "): needMore, because !bcs.consumeClosed");
+						if (logCoord) LOG.info("checkForClosingProduced(" + bagID + ", " + s + ", opID = " + opID + "): needMore, because !bcs.consumeClosed");
 						needMore = true;
 						break;
 					}
@@ -581,12 +583,12 @@ public class CFLManager {
 				int actual = s.producedSubtasks.size();
 				assert actual <= needed; // This should be true, because we have already checked consumeClose above
 				if (actual < needed) {
-					LOG.info("checkForClosingProduced(" + bagID + ", " + s + ", opID = " + opID + "): needMore, because actual = " + actual + ", needed = " + needed);
+					if (logCoord) LOG.info("checkForClosingProduced(" + bagID + ", " + s + ", opID = " + opID + "): needMore, because actual = " + actual + ", needed = " + needed);
 					needMore = true;
 				}
 			}
 			if (!needMore) {
-				LOG.info("produceClose for bag " + bagID + " at op " + opID);
+				if (logCoord) LOG.info("produceClose for bag " + bagID + " at op " + opID);
 				s.produceClosed = true;
 			}
 		}
@@ -612,7 +614,7 @@ public class CFLManager {
 
 	// (runs on client)
     private synchronized void closeInputBagRemote(BagID bagID, int opID) {
-		LOG.info("closeInputBagRemote(" + bagID + ", " + opID +")");
+		if (logCoord) LOG.info("closeInputBagRemote(" + bagID + ", " + opID +")");
 
 		closeInputBags.add(new CloseInputBag(bagID, opID));
 
