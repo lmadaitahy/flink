@@ -62,6 +62,10 @@ public class CFLManager {
 		senderStreams = new OutputStream[hosts.length];
 		senderDataOutputViews = new DataOutputViewStreamWrapper[hosts.length];
 
+		cflSendSeqNum = 0;
+
+		resetNeeded = false;
+
 		createSenderConnections();
 	}
 
@@ -88,9 +92,11 @@ public class CFLManager {
 
 	private int terminalBB = -1;
 
-	private volatile int cflSendSeqNum = -1000000;
+	private volatile int cflSendSeqNum = 0;
 
 	private final Object clientLock = new Object(); // TODO: rename to msgSendLock
+
+	private volatile boolean resetNeeded;
 
 	public JobID getJobID() {
 		return jobID;
@@ -217,6 +223,7 @@ public class CFLManager {
 					while (true) {
 						Msg msg = msgSer.deserialize(divsw);
 						LOG.info("GGG Got " + msg);
+						resetIfNeeded();
 						if (msg.cflElement != null) {
 							addTentative(msg.cflElement.seqNum, msg.cflElement.bbId); // will do the callbacks
 						} else if (msg.consumed != null) {
@@ -266,8 +273,9 @@ public class CFLManager {
 			cb.notify(curCFL);
 		}
 
-		assert terminalBB != -1; // a drivernek be kell allitania a job elindulasa elott
+		assert callbacks.size() == 0 || terminalBB != -1; // A drivernek be kell allitania a job elindulasa elott. Viszont ebbe a fieldbe a BagOperatorHost.setup-ban kerul.
 		if (curCFL.get(curCFL.size() - 1) == terminalBB) {
+			assert terminalBB != -1;
 			// We need to copy, because notifyTerminalBB might call unsubscribe, which would lead to a ConcurrentModificationException
 			ArrayList<CFLCallback> origCallbacks = new ArrayList<>(callbacks);
 			for (CFLCallback cb: origCallbacks) {
@@ -299,6 +307,8 @@ public class CFLManager {
 		LOG.info("GGG CFLManager.subscribe");
 		assert allIncomingUp && allSenderUp;
 
+		resetIfNeeded();
+
 		callbacks.add(cb);
 
 		// Egyenkent elkuldjuk a notificationt mindegyik eddigirol
@@ -328,11 +338,20 @@ public class CFLManager {
 			LOG.info("tm.CFLVoteStop();");
 			tm.CFLVoteStop();
 			setJobID(null);
+			resetNeeded = true;
 		}
 	}
 
-	public synchronized void resetCFL() {
-		LOG.info("GGG Resetting CFL.");
+	private synchronized void resetIfNeeded() {
+		LOG.info("GGG resetIfNeeded");
+		if (resetNeeded) {
+			reset();
+			resetNeeded = false;
+		}
+	}
+
+	private synchronized void reset() {
+		LOG.info("GGG Resetting CFLManager.");
 
 		assert callbacks.size() == 0;
 
