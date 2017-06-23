@@ -96,7 +96,13 @@ public class CFLManager {
 
 	private volatile int cflSendSeqNum = 0;
 
-	private final Object clientLock = new Object(); // TODO: rename to msgSendLock
+	// https://stackoverflow.com/questions/6012640/locking-strategies-and-techniques-for-preventing-deadlocks-in-code
+	// We obtain multiple locks only in the following orders:
+	// When receiving a msg:
+	//   CFLManager -> BagOperatorHost -> msgSendLock  or
+	//   CFLManager -> msgSendLock  (when the msg triggers sending closeInputBag)
+	// When entering through processElement: BagOperatorHost -> msgSendLock
+	private final Object msgSendLock = new Object();
 
 	private volatile int jobCounter = -10;
 
@@ -306,7 +312,7 @@ public class CFLManager {
 
 	// A helyi TM-ben futo operatorok hivjak
 	public void appendToCFL(int bbId) {
-		synchronized (clientLock) {
+		synchronized (msgSendLock) {
 			assert tentativeCFL.size() == curCFL.size(); // azaz ilyenkor nem lehetnek lyukak
 
 			LOG.info("Adding " + bbId + " to CFL (appendToCFL)");
@@ -433,7 +439,7 @@ public class CFLManager {
 
     // kliens -> coordinator
     public void consumedLocal(BagID bagID, int numElements, int subtaskIndex, int opID) {
-		synchronized (clientLock) {
+		synchronized (msgSendLock) {
 	//		if (coordinator) {
 	//			consumedRemote(bagID, numElements, subtaskIndex, opID);
 	//		} else {
@@ -496,7 +502,7 @@ public class CFLManager {
 
     // kliens -> coordinator
 	public void producedLocal(BagID bagID, BagID[] inpIDs, int numElements, int para, int subtaskIndex, int opID) {
-		synchronized (clientLock) {
+		synchronized (msgSendLock) {
 			assert inpIDs.length <= 2; // ha 0, akkor BagSource
 
 	//		if (coordinator) {
@@ -596,7 +602,7 @@ public class CFLManager {
 
     // A coordinator a local itt. Az operatorok inputjainak a close-olasat valtja ez ki.
     private synchronized void closeInputBagLocal(BagID bagID, int opID) {
-		synchronized (clientLock) { // Azert kell itt ez is, mert kulonben a senderStream-ekben osszekavarodhatnak az uzenetek
+		synchronized (msgSendLock) { // Azert kell itt ez is, mert kulonben a senderStream-ekben osszekavarodhatnak az uzenetek
 			assert coordinator;
 
 			//closeInputBagRemote(bagID, opID);
