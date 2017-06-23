@@ -7,6 +7,7 @@ import org.apache.flink.api.common.typeutils.TypeSerializer;
 import org.apache.flink.core.memory.DataInputViewStreamWrapper;
 import org.apache.flink.core.memory.DataOutputViewStreamWrapper;
 import org.apache.flink.runtime.taskmanager.TaskManager;
+import org.apache.flink.util.ExceptionUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -266,7 +267,7 @@ public class CFLManager {
 				}
 			} catch (Throwable e) {
 				e.printStackTrace();
-				LOG.error(e.getStackTrace().toString());
+				LOG.error(ExceptionUtils.stringifyException(e));
 				Runtime.getRuntime().halt(200);
 			}
 		}
