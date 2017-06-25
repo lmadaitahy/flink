@@ -382,7 +382,13 @@ public class CFLManager {
 			} catch (InterruptedException e) {
 				throw new RuntimeException();
 			}
-			reset();
+			try {
+				reset();
+			} catch (Throwable e) {
+				e.printStackTrace();
+				LOG.error(ExceptionUtils.stringifyException(e));
+				Runtime.getRuntime().halt(200);
+			}
 		}
 	}
 
