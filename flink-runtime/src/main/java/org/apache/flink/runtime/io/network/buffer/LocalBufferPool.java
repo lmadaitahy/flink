@@ -211,7 +211,8 @@ class LocalBufferPool implements BufferPool {
 					throw new IllegalStateException("Buffer pool is destroyed.");
 				}
 
-				if (numberOfRequestedMemorySegments < currentPoolSize) {
+				//if (numberOfRequestedMemorySegments < currentPoolSize) {
+				if (true) {
 					final MemorySegment segment = networkBufferPool.requestMemorySegment();
 
 					if (segment != null) {
