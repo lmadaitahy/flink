@@ -94,6 +94,8 @@ public class CFLManager {
 	private List<CFLCallback> callbacks = new ArrayList<>();
 
 	private int terminalBB = -1;
+	private int numSubscribed = 0;
+	private Integer numToSubscribe = null;
 
 	private volatile int cflSendSeqNum = 0;
 
@@ -292,13 +294,17 @@ public class CFLManager {
 		}
 	}
 
+	private boolean shouldNotifyTerminalBB() {
+		return curCFL.size() > 0 && curCFL.get(curCFL.size() - 1) == terminalBB;
+	}
+
 	private synchronized void notifyCallbacks() {
 		for (CFLCallback cb: callbacks) {
 			cb.notify(curCFL);
 		}
 
 		assert callbacks.size() == 0 || terminalBB != -1; // A drivernek be kell allitania a job elindulasa elott. Viszont ebbe a fieldbe a BagOperatorHost.setup-ban kerul.
-		if (curCFL.get(curCFL.size() - 1) == terminalBB) {
+		if (shouldNotifyTerminalBB()) {
 			assert terminalBB != -1;
 			// We need to copy, because notifyTerminalBB might call unsubscribe, which would lead to a ConcurrentModificationException
 			ArrayList<CFLCallback> origCallbacks = new ArrayList<>(callbacks);
@@ -331,6 +337,8 @@ public class CFLManager {
 		LOG.info("CFLManager.subscribe");
 		assert allIncomingUp && allSenderUp;
 
+		numSubscribed++;
+
 		// Maybe there could be a waitForReset here
 
 		callbacks.add(cb);
@@ -343,7 +351,7 @@ public class CFLManager {
 		}
 
 		assert terminalBB != -1; // a drivernek be kell allitania a job elindulasa elott
-		if (curCFL.size() > 0 && curCFL.get(curCFL.size() - 1) == terminalBB) {
+		if (shouldNotifyTerminalBB()) {
 			cb.notifyTerminalBB();
 		}
 
@@ -358,7 +366,7 @@ public class CFLManager {
 
 		// Arra kene vigyazni, hogy nehogy az legyen, hogy olyankor hiszi azt, hogy mindenki unsubscribe-olt, amikor meg nem mindenki subscribe-olt.
 		// Egyelore figyelmen kivul hagyom ezt a problemat, valszeg nem nagyon fogok belefutni.
-		if (callbacks.isEmpty()) {
+		if (numToSubscribe != null && numSubscribed == numToSubscribe && callbacks.isEmpty()) {
 			LOG.info("tm.CFLVoteStop();");
 			tm.CFLVoteStop();
 			setJobID(null);
@@ -387,7 +395,7 @@ public class CFLManager {
 			} catch (Throwable e) {
 				e.printStackTrace();
 				LOG.error(ExceptionUtils.stringifyException(e));
-				Runtime.getRuntime().halt(200);
+				Runtime.getRuntime().halt(201);
 			}
 		}
 	}
@@ -407,12 +415,20 @@ public class CFLManager {
 
 		closeInputBags.clear();
 
+		terminalBB = -1;
+		numSubscribed = 0;
+		numToSubscribe = null;
+
 		jobCounter++;
 	}
 
 	public synchronized void specifyTerminalBB(int bbId) {
 		LOG.info("specifyTerminalBB: " + bbId);
 		terminalBB = bbId;
+	}
+
+	public synchronized void specifyNumToSubscribe(int numToSubscribe) {
+		this.numToSubscribe = numToSubscribe;
 	}
 
     // --------------------------------------------------------
@@ -490,7 +506,7 @@ public class CFLManager {
 
 		for (BagID b: bagStatuses.get(bagID).inputTo) {
 			// azert jo itt a -1, mert ilyenkor biztosan nem source
-			checkForClosingProduced(b, bagStatuses.get(b), -1, opID);
+			checkForClosingProduced(b, bagStatuses.get(b), -1, b.opID);
 		}
     }
 
@@ -565,7 +581,7 @@ public class CFLManager {
 			int totalProducedMsgs = s.producedSubtasks.size();
 			assert totalProducedMsgs <= para;
 			if (totalProducedMsgs == para) {
-				if (logCoord) LOG.info("produceClose for bag " + bagID + " at op " + opID);
+				if (logCoord) LOG.info("checkForClosingProduced(" + bagID + ", " + s + ", opID = " + opID + "): produceClosed");
 				s.produceClosed = true;
 			}
 		} else {
@@ -601,7 +617,7 @@ public class CFLManager {
 				}
 			}
 			if (!needMore) {
-				if (logCoord) LOG.info("produceClose for bag " + bagID + " at op " + opID);
+				if (logCoord) LOG.info("checkForClosingProduced(" + bagID + ", " + s + ", opID = " + opID + "): produceClosed");
 				s.produceClosed = true;
 			}
 		}

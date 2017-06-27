@@ -1101,10 +1101,15 @@ public class DataStream<T> {
 		return returnStream;
 	}
 
+	public static List<DataStream<?>> btStreams = new ArrayList<>();
+
+	// Vigyazni, hogy csak a BagOperatorHost-okra hivjak bt-t!
 	public <R> SingleOutputStreamOperator<R> bt(String operatorName, TypeInformation<R> outTypeInfo, InputParaSettable<T, R> operator) {
 		operator.setInputPara(getParallelism());
 		operator.setName(operatorName);
-		return transform(operatorName, outTypeInfo, operator);
+		SingleOutputStreamOperator<R> ret = transform(operatorName, outTypeInfo, operator);
+		btStreams.add(ret);
+		return ret;
 	}
 
 	/**
