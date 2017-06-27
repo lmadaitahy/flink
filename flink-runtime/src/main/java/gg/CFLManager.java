@@ -27,7 +27,7 @@ public class CFLManager {
 
 	protected static final Logger LOG = LoggerFactory.getLogger(CFLManager.class);
 
-	private static boolean logCoord = false;
+	private static boolean logCoord = true;
 
 	private static CFLManager sing = null;
 	public static CFLManager getSing() {return sing;}
@@ -509,6 +509,7 @@ public class CFLManager {
     }
 
     private void checkForClosingConsumed(BagID bagID, BagStatus s, BagConsumptionStatus c, int opID) {
+		assert !c.consumeClosed;
 		if (s.produceClosed) {
 			assert c.numConsumed <= s.numProduced; // (ennek belul kell lennie az if-ben mert kivul a reordering miatt nem biztos, hogy igaz)
 			if (c.numConsumed == s.numProduced) {
@@ -573,6 +574,10 @@ public class CFLManager {
     }
 
     private void checkForClosingProduced(BagID bagID, BagStatus s, int para, int opID) {
+		if (s.produceClosed) {
+			return; // Mondjuk ezt nem ertem, hogy hogy fordulhat elo
+		}
+
 		if (s.inputs.size() == 0) {
 			// source, tehat mindenhonnan varunk
 			assert para != -1;
@@ -583,40 +588,62 @@ public class CFLManager {
 				s.produceClosed = true;
 			}
 		} else {
-			boolean needMore = false;
-			// Ebbe rakjuk ossze az inputok consumedSubtasks-jait
-			Set<Integer> needProduced = new HashSet<>();
-			for (BagID inp: s.inputs) {
-				BagConsumptionStatus bcs = bagConsumedStatuses.get(new BagIDAndOpID(inp, opID));
-				if (bcs != null) {
-					if (!bcs.consumeClosed) {
-						if (logCoord) LOG.info("checkForClosingProduced(" + bagID + ", " + s + ", opID = " + opID + "): needMore, because !bcs.consumeClosed");
-						needMore = true;
-						break;
-					}
-					needProduced.addAll(bcs.consumedSubtasks);
-				} else {
-					assert false;
-					// Jaa, vagy az van esetleg, hogy nem mindig a termeszetes sorrendben jon a produced es a consumed?
 
-					// This can happen if we have a binary operator that sends produced while it haven't yet consumed from one of its inputs.
-					// Hm, but actually I don't think I have such an operator at the moment.
-					assert s.inputs.size() > 1;
-					needMore = true;
-				}
-			}
-			if (!needMore) {
-				int needed = needProduced.size();
-				int actual = s.producedSubtasks.size();
-				assert actual <= needed; // This should be true, because we have already checked consumeClose above
-				if (actual < needed) {
-					if (logCoord) LOG.info("checkForClosingProduced(" + bagID + ", " + s + ", opID = " + opID + "): needMore, because actual = " + actual + ", needed = " + needed);
-					needMore = true;
-				}
-			}
-			if (!needMore) {
+			/// itt meg kicsit szebbre kene, hogy ne legyen kodduplikalas a fentebbi resszel
+			// Amugy az isEmpty produced-janak lezarasa vegett van most ez bent. Annak ugyebar 1 a para-ja, es onnan fog is kuldeni.
+			int totalProducedMsgs = s.producedSubtasks.size();
+			assert totalProducedMsgs <= para;
+			if (totalProducedMsgs == para) {
 				if (logCoord) LOG.info("checkForClosingProduced(" + bagID + ", " + s + ", opID = " + opID + "): produceClosed");
 				s.produceClosed = true;
+			}
+			///
+
+			if (!s.produceClosed) {
+				boolean needMore = false;
+				// Ebbe rakjuk ossze az inputok consumedSubtasks-jait
+				Set<Integer> needProduced = new HashSet<>();
+				for (BagID inp : s.inputs) {
+					BagConsumptionStatus bcs = bagConsumedStatuses.get(new BagIDAndOpID(inp, opID));
+					if (bcs != null) {
+						if (!bcs.consumeClosed) {
+							if (logCoord)
+								LOG.info("checkForClosingProduced(" + bagID + ", " + s + ", opID = " + opID + "): needMore, because !bcs.consumeClosed");
+							needMore = true;
+							break;
+						}
+						needProduced.addAll(bcs.consumedSubtasks);
+					} else {
+						// Maybe we run into trouble here if this happens because we have a binary operator that sends produced while it haven't yet consumed from one of its inputs.
+						// Hm, but actually I don't think I have such an operator at the moment.   Ez kozben mar nem ervenyes
+						// But this can actually happen with the nonEmpty stuff. But then we just close produced here.
+						// Vagy esetleg az is lehet, hogy azert kerultunk ide mert nem a termeszetes sorrendben jott a produced es a consumed?
+						if (logCoord)
+							LOG.info("checkForClosingProduced(" + bagID + ", " + s + ", opID = " + opID + "): bcs == null");
+					}
+				}
+				if (!needMore && !s.produceClosed) {
+					int needed = needProduced.size();
+					int actual = s.producedSubtasks.size();
+					assert actual <= needed; // This should be true, because we have already checked consumeClose above
+					if (actual < needed) {
+						if (logCoord)
+							LOG.info("checkForClosingProduced(" + bagID + ", " + s + ", opID = " + opID + "): needMore, because actual = " + actual + ", needed = " + needed);
+						needMore = true;
+					}
+				}
+				if (!needMore && !s.produceClosed) {
+					if (logCoord)
+						LOG.info("checkForClosingProduced(" + bagID + ", " + s + ", opID = " + opID + "): produceClosed");
+					s.produceClosed = true;
+				}
+			}
+		}
+
+		if (s.produceClosed) {
+			if (s.numProduced == 0) {
+				if (logCoord) LOG.info("checkForClosingProduced(" + bagID + ", " + s + ", opID = " + opID + ") detected an empty bag");
+				closeInputBagLocal(bagID, CloseInputBag.broadcast);
 			}
 		}
 	}
@@ -760,6 +787,8 @@ public class CFLManager {
 	}
 
 	public static class CloseInputBag {
+
+		public final static int broadcast = -100;
 
 		public BagID bagID;
 		public int opID;
