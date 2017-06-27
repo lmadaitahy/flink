@@ -22,7 +22,9 @@ import org.apache.flink.core.io.IOReadableWritable;
 import org.apache.flink.runtime.io.network.api.writer.ChannelSelector;
 import org.apache.flink.runtime.io.network.api.writer.RecordWriter;
 import org.apache.flink.runtime.io.network.api.writer.ResultPartitionWriter;
+import org.apache.flink.runtime.plugable.SerializationDelegate;
 import org.apache.flink.streaming.api.CanForceFlush;
+import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 
 import java.io.IOException;
 
@@ -79,11 +81,24 @@ public class StreamRecordWriter<T extends IOReadableWritable> extends RecordWrit
 		}
 	}
 
+	private boolean isForceFlush(T record) {
+		if (record instanceof SerializationDelegate) {
+			Object ins = ((SerializationDelegate)record).getInstance();
+			if (ins instanceof StreamRecord) {
+				Object sr = ((StreamRecord) ins).getValue();
+				if (sr instanceof CanForceFlush) {
+					return ((CanForceFlush) sr).shouldFlush();
+				}
+			}
+		}
+		return false;
+	}
+
 	@Override
 	public void emit(T record) throws IOException, InterruptedException {
 		checkErroneous();
 		super.emit(record);
-		if (flushAlways || (record instanceof CanForceFlush && ((CanForceFlush) record).shouldFlush())) {
+		if (flushAlways || isForceFlush(record)) {
 			flush();
 		}
 	}
@@ -92,7 +107,7 @@ public class StreamRecordWriter<T extends IOReadableWritable> extends RecordWrit
 	public void broadcastEmit(T record) throws IOException, InterruptedException {
 		checkErroneous();
 		super.broadcastEmit(record);
-		if (flushAlways || (record instanceof CanForceFlush && ((CanForceFlush) record).shouldFlush())) {
+		if (flushAlways || isForceFlush(record)) {
 			flush();
 		}
 	}
@@ -101,7 +116,7 @@ public class StreamRecordWriter<T extends IOReadableWritable> extends RecordWrit
 	public void randomEmit(T record) throws IOException, InterruptedException {
 		checkErroneous();
 		super.randomEmit(record);
-		if (flushAlways || (record instanceof CanForceFlush && ((CanForceFlush) record).shouldFlush())) {
+		if (flushAlways || isForceFlush(record)) {
 			flush();
 		}
 	}

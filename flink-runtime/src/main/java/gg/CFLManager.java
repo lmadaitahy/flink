@@ -364,8 +364,6 @@ public class CFLManager {
 		LOG.info("CFLManager.unsubscribe");
 		callbacks.remove(cb);
 
-		// Arra kene vigyazni, hogy nehogy az legyen, hogy olyankor hiszi azt, hogy mindenki unsubscribe-olt, amikor meg nem mindenki subscribe-olt.
-		// Egyelore figyelmen kivul hagyom ezt a problemat, valszeg nem nagyon fogok belefutni.
 		if (numToSubscribe != null && numSubscribed == numToSubscribe && callbacks.isEmpty()) {
 			LOG.info("tm.CFLVoteStop();");
 			tm.CFLVoteStop();
