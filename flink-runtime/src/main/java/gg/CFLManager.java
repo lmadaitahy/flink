@@ -27,7 +27,7 @@ public class CFLManager {
 
 	protected static final Logger LOG = LoggerFactory.getLogger(CFLManager.class);
 
-	private static boolean logCoord = true;
+	private static boolean logCoord = false;
 
 	private static CFLManager sing = null;
 	public static CFLManager getSing() {return sing;}
