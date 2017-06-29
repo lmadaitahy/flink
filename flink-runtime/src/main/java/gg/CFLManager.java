@@ -442,6 +442,8 @@ public class CFLManager {
 		public Set<BagID> inputs = new HashSet<>();
 		public Set<BagID> inputTo = new HashSet<>();
 		public Set<Integer> consumedBy = new HashSet<>();
+
+		public int para = -2;
     }
 
 	private static final class BagConsumptionStatus {
@@ -503,8 +505,9 @@ public class CFLManager {
 		checkForClosingConsumed(bagID, s, c, opID);
 
 		for (BagID b: bagStatuses.get(bagID).inputTo) {
-			// azert jo itt a -1, mert ilyenkor biztosan nem source
-			checkForClosingProduced(b, bagStatuses.get(b), -1, b.opID);
+			// Regen azert volt jo itt a -1, mert ilyenkor biztosan nem source. De mostmar nem csak source-nal hasznaljuk a para-t
+			assert s.para != -2;
+			checkForClosingProduced(b, bagStatuses.get(b), s.para, b.opID);
 		}
     }
 
@@ -559,6 +562,9 @@ public class CFLManager {
 		}
 		assert s.inputs.size() <= 2;
 
+		// Set para
+		s.para = para;
+
 		// Add to s.numProduced
 		s.numProduced += numElements;
 
@@ -589,15 +595,14 @@ public class CFLManager {
 			}
 		} else {
 
-			/// itt meg kicsit szebbre kene, hogy ne legyen kodduplikalas a fentebbi resszel
-			// Amugy az isEmpty produced-janak lezarasa vegett van most ez bent. Annak ugyebar 1 a para-ja, es onnan fog is kuldeni.
+			// Az isEmpty produced-janak lezarasa vegett van most ez bent. Annak ugyebar 1 a para-ja, es onnan fog is kuldeni.
+			// (Itt lehetne kicsit szebben, hogy ne legyen kodduplikalas a fentebbi resszel.)
 			int totalProducedMsgs = s.producedSubtasks.size();
 			assert totalProducedMsgs <= para;
 			if (totalProducedMsgs == para) {
 				if (logCoord) LOG.info("checkForClosingProduced(" + bagID + ", " + s + ", opID = " + opID + "): produceClosed");
 				s.produceClosed = true;
 			}
-			///
 
 			if (!s.produceClosed) {
 				boolean needMore = false;
