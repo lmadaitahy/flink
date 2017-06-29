@@ -38,19 +38,10 @@ public class CFLManager {
 	public static int numAllSlots = -1;
 	public static int numTaskSlotsPerTm = -1;
 
-//	public static void create(TaskManager tm) {
-//		sing = new CFLManager(tm);
-//	}
-
 	public static void create(TaskManager tm, String[] hosts, boolean coordinator) {
 		sing = new CFLManager(tm, hosts, coordinator);
 	}
 
-
-//	public CFLManager(TaskManager tm) {
-//		// local execution
-//		this(tm, new String[]{}, true);
-//	}
 
 	public CFLManager(TaskManager tm, String[] hosts, boolean coordinator) {
 		this.tm = tm;
@@ -484,16 +475,12 @@ public class CFLManager {
     // kliens -> coordinator
     public void consumedLocal(BagID bagID, int numElements, int subtaskIndex, int opID) {
 		synchronized (msgSendLock) {
-	//		if (coordinator) {
-	//			consumedRemote(bagID, numElements, subtaskIndex, opID);
-	//		} else {
-				try {
-					msgSer.serialize(new Msg(jobCounter, new Consumed(bagID, numElements, subtaskIndex, opID)), senderDataOutputViews[0]);
-					senderStreams[0].flush();
-				} catch (IOException e) {
-					throw new RuntimeException(e);
-				}
-	//		}
+			try {
+				msgSer.serialize(new Msg(jobCounter, new Consumed(bagID, numElements, subtaskIndex, opID)), senderDataOutputViews[0]);
+				senderStreams[0].flush();
+			} catch (IOException e) {
+				throw new RuntimeException(e);
+			}
 		}
     }
 
@@ -550,17 +537,12 @@ public class CFLManager {
 	public void producedLocal(BagID bagID, BagID[] inpIDs, int numElements, int para, int subtaskIndex, int opID) {
 		synchronized (msgSendLock) {
 			assert inpIDs.length <= 2; // ha 0, akkor BagSource
-
-	//		if (coordinator) {
-	//			producedRemote(bagID, inpIDs, numElements, para, subtaskIndex, opID);
-	//		} else {
-				try {
-					msgSer.serialize(new Msg(jobCounter, new Produced(bagID, inpIDs, numElements, para, subtaskIndex, opID)), senderDataOutputViews[0]);
-					senderStreams[0].flush();
-				} catch (IOException e) {
-					throw new RuntimeException();
-				}
-	//		}
+			try {
+				msgSer.serialize(new Msg(jobCounter, new Produced(bagID, inpIDs, numElements, para, subtaskIndex, opID)), senderDataOutputViews[0]);
+				senderStreams[0].flush();
+			} catch (IOException e) {
+				throw new RuntimeException();
+			}
 		}
     }
 
@@ -678,8 +660,6 @@ public class CFLManager {
     private synchronized void closeInputBagLocal(BagID bagID, int opID) {
 		synchronized (msgSendLock) { // Azert kell itt ez is, mert kulonben a senderStream-ekben osszekavarodhatnak az uzenetek
 			assert coordinator;
-
-			//closeInputBagRemote(bagID, opID);
 
 			for (int i = 0; i < hosts.length; i++) {
 				try {
