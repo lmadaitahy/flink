@@ -259,6 +259,10 @@ public class CFLManager {
 								producedRemote(msg.produced.bagID, msg.produced.inpIDs, msg.produced.numElements, msg.produced.para, msg.produced.subtaskIndex, msg.produced.opID);
 							} else if (msg.closeInputBag != null) {
 								closeInputBagRemote(msg.closeInputBag.bagID, msg.closeInputBag.opID);
+							} else if (msg.subscribeCnt != null) {
+								subscribeCntRemote();
+							} else {
+								assert false;
 							}
 						}
 					}
@@ -337,8 +341,6 @@ public class CFLManager {
 		LOG.info("CFLManager.subscribe");
 		assert allIncomingUp && allSenderUp;
 
-		numSubscribed++;
-
 		// Maybe there could be a waitForReset here
 
 		callbacks.add(cb);
@@ -358,18 +360,35 @@ public class CFLManager {
 		for(CloseInputBag cib: closeInputBags) {
 			cb.notifyCloseInput(cib.bagID, cib.opID);
 		}
+
+		subscribeCntLocal();
+	}
+
+	private void checkVoteStop() {
+		if (numToSubscribe != null && numSubscribed == numToSubscribe && callbacks.isEmpty()) {
+			LOG.info("tm.CFLVoteStop();");
+			tm.CFLVoteStop();
+			setJobID(null);
+			resetThread = new ResetThread();
+		} else {
+			if (numToSubscribe == null) {
+				LOG.info("checkVoteStop: numToSubscribe == null");
+			} else {
+				if (callbacks.isEmpty() && numSubscribed != numToSubscribe) {
+					LOG.info("checkVoteStop: callbacks.isEmpty(), but numSubscribed != numToSubscribe: " + numSubscribed + " != " + numToSubscribe);
+				} else {
+					LOG.info("checkVoteStop: callbacks has " + callbacks.size() + " elements");
+				}
+			}
+		}
+
 	}
 
 	public synchronized void unsubscribe(CFLCallback cb) {
 		LOG.info("CFLManager.unsubscribe");
 		callbacks.remove(cb);
 
-		if (numToSubscribe != null && numSubscribed == numToSubscribe && callbacks.isEmpty()) {
-			LOG.info("tm.CFLVoteStop();");
-			tm.CFLVoteStop();
-			setJobID(null);
-			resetThread = new ResetThread();
-		}
+		checkVoteStop();
 	}
 
 	private class ResetThread implements Runnable {
@@ -426,7 +445,9 @@ public class CFLManager {
 	}
 
 	public synchronized void specifyNumToSubscribe(int numToSubscribe) {
+		LOG.info("specifyNumToSubscribe: " + numToSubscribe);
 		this.numToSubscribe = numToSubscribe;
+		checkVoteStop();
 	}
 
     // --------------------------------------------------------
@@ -683,6 +704,25 @@ public class CFLManager {
 		}
     }
 
+
+    private void subscribeCntLocal() {
+		synchronized (msgSendLock) {
+			for (int i = 0; i < hosts.length; i++) {
+				try {
+					msgSer.serialize(new Msg(jobCounter, new SubscribeCnt()), senderDataOutputViews[i]);
+					senderStreams[i].flush();
+				} catch (IOException e1) {
+					throw new RuntimeException(e1);
+				}
+			}
+		}
+	}
+
+	private synchronized void subscribeCntRemote() {
+		numSubscribed++;
+		checkVoteStop();
+	}
+
     // --------------------------------
 
     public static class Msg {
@@ -694,6 +734,7 @@ public class CFLManager {
 		public Consumed consumed;
 		public Produced produced;
 		public CloseInputBag closeInputBag;
+		public SubscribeCnt subscribeCnt;
 
 		public Msg() {}
 
@@ -717,6 +758,11 @@ public class CFLManager {
 			this.closeInputBag = closeInputBag;
 		}
 
+		public Msg(int jobCounter, SubscribeCnt subscribeCnt) {
+			this.jobCounter = jobCounter;
+			this.subscribeCnt = subscribeCnt;
+		}
+
 		@Override
 		public String toString() {
 			return "Msg{" +
@@ -725,6 +771,7 @@ public class CFLManager {
 					", consumed=" + consumed +
 					", produced=" + produced +
 					", closeInputBag=" + closeInputBag +
+					", subscribeCnt=" + subscribeCnt +
 					'}';
 		}
 	}
@@ -812,6 +859,10 @@ public class CFLManager {
 					", opID=" + opID +
 					'}';
 		}
+	}
+
+	public static class SubscribeCnt {
+		public byte dummy; // To make it a POJO
 	}
 
 	// --------------------------------
