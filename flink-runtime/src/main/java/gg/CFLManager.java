@@ -556,7 +556,7 @@ public class CFLManager {
 			bagStatuses.put(bagID, s);
 		}
 
-		assert !s.produceClosed;
+		assert !s.produceClosed || numElements == 0;
 
 		// Add to s.inputs, and add to the inputTos of the inputs
 		for (BagID inp: inpIDs) {
@@ -603,7 +603,7 @@ public class CFLManager {
 			int totalProducedMsgs = s.producedSubtasks.size();
 			assert totalProducedMsgs <= para;
 			if (totalProducedMsgs == para) {
-				if (logCoord) LOG.info("checkForClosingProduced(" + bagID + ", " + s + ", opID = " + opID + "): produceClosed");
+				if (logCoord) LOG.info("checkForClosingProduced(" + bagID + ", " + s + ", opID = " + opID + "): produceClosed, because totalProducedMsgs == para");
 				s.produceClosed = true;
 			}
 
@@ -633,7 +633,7 @@ public class CFLManager {
 				if (!needMore && !s.produceClosed) {
 					int needed = needProduced.size();
 					int actual = s.producedSubtasks.size();
-					assert actual <= needed; // This should be true, because we have already checked consumeClose above
+					assert actual <= needed || needed == 0; // This should be true, because we have already checked consumeClose above. (needed == 0 when responding to empty input bags)
 					if (actual < needed) {
 						if (logCoord)
 							LOG.info("checkForClosingProduced(" + bagID + ", " + s + ", opID = " + opID + "): needMore, because actual = " + actual + ", needed = " + needed);
@@ -651,7 +651,7 @@ public class CFLManager {
 		if (s.produceClosed) {
 			if (s.numProduced == 0) {
 				if (logCoord) LOG.info("checkForClosingProduced(" + bagID + ", " + s + ", opID = " + opID + ") detected an empty bag");
-				closeInputBagLocal(bagID, CloseInputBag.broadcast);
+				closeInputBagLocal(bagID, CloseInputBag.emptyBag);
 			}
 		}
 	}
@@ -820,7 +820,9 @@ public class CFLManager {
 
 	public static class CloseInputBag {
 
-		public final static int broadcast = -100;
+		// Used in the opID field, when the bag is empty. In this case, all operators consuming this bag will close it.
+		// They will also send produced(0), if they are marked with EmptyFromEmpty.
+		public final static int emptyBag = -100;
 
 		public BagID bagID;
 		public int opID;
