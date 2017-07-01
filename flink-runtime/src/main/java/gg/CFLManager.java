@@ -95,7 +95,8 @@ public class CFLManager {
 	// When receiving a msg:
 	//   CFLManager -> BagOperatorHost -> msgSendLock  or
 	//   CFLManager -> msgSendLock  (when the msg triggers sending closeInputBag)
-	// When entering through processElement: BagOperatorHost -> msgSendLock
+	// When entering through processElement:
+	//   BagOperatorHost -> msgSendLock
 	private final Object msgSendLock = new Object();
 
 	private volatile int jobCounter = -10;
@@ -273,7 +274,11 @@ public class CFLManager {
 	private synchronized void addTentative(int seqNum, int bbId) {
 		while (seqNum >= tentativeCFL.size()) {
 			tentativeCFL.add(null);
-			cflSendSeqNum = Math.max(cflSendSeqNum, seqNum + 1);
+			// Vigyazat, a kov. if-et nem lehetne max-szal kivaltani, mert akkor osszeakadhatnank
+			// az appendToCFL-ben levo inkrementalassal.
+			if (seqNum + 1 > cflSendSeqNum) {
+				cflSendSeqNum = seqNum + 1;
+			}
 		}
 		assert tentativeCFL.get(seqNum) == null; // (kivenni, ha lesz az UDP-s dolog)
 		tentativeCFL.set(seqNum, bbId);
@@ -315,15 +320,17 @@ public class CFLManager {
 	// A helyi TM-ben futo operatorok hivjak
 	public void appendToCFL(int bbId) {
 		synchronized (msgSendLock) {
-			assert tentativeCFL.size() == curCFL.size(); // azaz ilyenkor nem lehetnek lyukak
+
+			// Ugyebar ha valaki appendel a CFL-hez, akkor mindig biztos a dolgaban.
+			// (Akkor is, ha tobbet appendel, mert olyan BB-ket is appendel, amelyekben nincs condition node.)
+			// Szoval nem fordulhat elo olyan, hogy el akarna agazni a CFL.
+			// Emiatt biztosak lehetunk benne, hogy nem akar senki olyankor appendelni, amikor meg nem
+			// kapta meg a legutobbi CFL-t. Ebbol kovetkezik, hogy itt nem lehetnek lyukak.
+			// Viszont ami miatt ezt megis ki kellett commentezni, az az, hogy szinkronizalasi problema van az
+			// addTentative-val olyankor, amikor egymas utan tobb appendToCFL-t hiv valaki.
+			//assert tentativeCFL.size() == curCFL.size();
 
 			LOG.info("Adding " + bbId + " to CFL (appendToCFL)");
-
-			//tentativeCFL.add(bbId);
-			//curCFL.add(bbId);
-			//sendElement(new CFLElement(curCFL.size()-1, bbId));
-			//notifyCallbacks();
-
 			sendElement(new CFLElement(cflSendSeqNum++, bbId));
 		}
 	}
