@@ -427,6 +427,7 @@ public class CFLManager {
 
 		bagStatuses.clear();
 		bagConsumedStatuses.clear();
+		emptyBags.clear();
 
 		closeInputBags.clear();
 
@@ -476,6 +477,8 @@ public class CFLManager {
     private final Map<BagID, BagStatus> bagStatuses = new HashMap<>();
 
 	private final Map<BagIDAndOpID, BagConsumptionStatus> bagConsumedStatuses = new HashMap<>();
+
+	private final Set<BagID> emptyBags = new HashSet<>();
 
 	private final List<CloseInputBag> closeInputBags = new ArrayList<>();
 
@@ -619,6 +622,14 @@ public class CFLManager {
 				// Ebbe rakjuk ossze az inputok consumedSubtasks-jait
 				Set<Integer> needProduced = new HashSet<>();
 				for (BagID inp : s.inputs) {
+					if (emptyBags.contains(inp)) {
+						// enelkul olyankor lenne gond, ha egy binaris operator egyik inputja ures, emiatt a closeInputBag
+						// mindegyik instance-t megloki, viszont a checkForClosingProduced csak a masik input alapjan nezi,
+						// hogy honnan kell jonni, es ezert nem szamit bizonyos jovesekre
+						for (int i=0; i< para; i++) {
+							needProduced.add(i);
+						}
+					}
 					BagConsumptionStatus bcs = bagConsumedStatuses.get(new BagIDAndOpID(inp, opID));
 					if (bcs != null) {
 						if (!bcs.consumeClosed) {
@@ -658,6 +669,7 @@ public class CFLManager {
 		if (s.produceClosed) {
 			if (s.numProduced == 0) {
 				if (logCoord) LOG.info("checkForClosingProduced(" + bagID + ", " + s + ", opID = " + opID + ") detected an empty bag");
+				emptyBags.add(bagID);
 				closeInputBagLocal(bagID, CloseInputBag.emptyBag);
 			}
 		}
