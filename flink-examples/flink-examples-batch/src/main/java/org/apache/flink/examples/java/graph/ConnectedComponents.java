@@ -81,14 +81,22 @@ public class ConnectedComponents {
 		// set up execution environment
 		ExecutionEnvironment env = ExecutionEnvironment.getExecutionEnvironment();
 
-		final int maxIterations = params.getInt("iterations", 10);
+		env.getConfig().enableObjectReuse();
+
+		final int maxIterations = params.getInt("iterations", 1000);
 
 		// make parameters available in the web interface
 		env.getConfig().setGlobalJobParameters(params);
 
 		// read vertex and edge data
-		DataSet<Long> vertices = getVertexDataSet(env, params);
+//		DataSet<Long> vertices = getVertexDataSet(env, params);
 		DataSet<Tuple2<Long, Long>> edges = getEdgeDataSet(env, params).flatMap(new UndirectEdge());
+		DataSet<Long> vertices = edges.map(new MapFunction<Tuple2<Long, Long>, Long>() {
+			@Override
+			public Long map(Tuple2<Long, Long> value) throws Exception {
+				return value.f0;
+			}
+		}).distinct();
 
 		// assign the initial components (equal to the vertex id)
 		DataSet<Tuple2<Long, Long>> verticesWithInitialId =
@@ -200,7 +208,7 @@ public class ConnectedComponents {
 
 	private static DataSet<Tuple2<Long, Long>> getEdgeDataSet(ExecutionEnvironment env, ParameterTool params) {
 		if (params.has("edges")) {
-			return env.readCsvFile(params.get("edges")).fieldDelimiter(" ").types(Long.class, Long.class);
+			return env.readCsvFile(params.get("edges")).fieldDelimiter(params.get("delimiter", "\t")).types(Long.class, Long.class);
 		} else {
 			System.out.println("Executing Connected Components example with default edges data set.");
 			System.out.println("Use --edges to specify file input.");
