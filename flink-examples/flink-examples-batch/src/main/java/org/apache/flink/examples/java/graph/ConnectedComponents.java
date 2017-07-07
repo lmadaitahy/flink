@@ -32,6 +32,7 @@ import org.apache.flink.api.java.operators.DeltaIteration;
 import org.apache.flink.api.java.tuple.Tuple1;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.api.java.utils.ParameterTool;
+import org.apache.flink.configuration.Configuration;
 import org.apache.flink.examples.java.graph.util.ConnectedComponentsData;
 import org.apache.flink.util.Collector;
 
@@ -81,6 +82,15 @@ public class ConnectedComponents {
 		// set up execution environment
 		ExecutionEnvironment env = ExecutionEnvironment.getExecutionEnvironment();
 
+//		///
+//		Configuration cfg = new Configuration();
+//		//cfg.setInteger("taskmanager.network.numberOfBuffers", 32768); //16384
+//		cfg.setBoolean("taskmanager.memory.preallocate", true);
+//		cfg.setInteger("taskmanager.numberOfTaskSlots", 4);
+//		cfg.setInteger("parallelism.default", 4);
+//		ExecutionEnvironment env = ExecutionEnvironment.createLocalEnvironment(cfg);
+//		///
+
 		env.getConfig().enableObjectReuse();
 
 		final int maxIterations = params.getInt("iterations", 1000);
@@ -89,31 +99,31 @@ public class ConnectedComponents {
 		env.getConfig().setGlobalJobParameters(params);
 
 		// read vertex and edge data
-//		DataSet<Long> vertices = getVertexDataSet(env, params);
-		DataSet<Tuple2<Long, Long>> edges = getEdgeDataSet(env, params).flatMap(new UndirectEdge());
-		DataSet<Long> vertices = edges.map(new MapFunction<Tuple2<Long, Long>, Long>() {
+//		DataSet<Integer> vertices = getVertexDataSet(env, params);
+		DataSet<Tuple2<Integer, Integer>> edges = getEdgeDataSet(env, params).flatMap(new UndirectEdge());
+		DataSet<Integer> vertices = edges.map(new MapFunction<Tuple2<Integer, Integer>, Integer>() {
 			@Override
-			public Long map(Tuple2<Long, Long> value) throws Exception {
+			public Integer map(Tuple2<Integer, Integer> value) throws Exception {
 				return value.f0;
 			}
 		}).distinct();
 
 		// assign the initial components (equal to the vertex id)
-		DataSet<Tuple2<Long, Long>> verticesWithInitialId =
-			vertices.map(new DuplicateValue<Long>());
+		DataSet<Tuple2<Integer, Integer>> verticesWithInitialId =
+			vertices.map(new DuplicateValue<Integer>());
 
 		// open a delta iteration
-		DeltaIteration<Tuple2<Long, Long>, Tuple2<Long, Long>> iteration =
+		DeltaIteration<Tuple2<Integer, Integer>, Tuple2<Integer, Integer>> iteration =
 				verticesWithInitialId.iterateDelta(verticesWithInitialId, maxIterations, 0);
 
 		// apply the step logic: join with the edges, select the minimum neighbor, update if the component of the candidate is smaller
-		DataSet<Tuple2<Long, Long>> changes = iteration.getWorkset().join(edges).where(0).equalTo(0).with(new NeighborWithComponentIDJoin())
+		DataSet<Tuple2<Integer, Integer>> changes = iteration.getWorkset().join(edges).where(0).equalTo(0).with(new NeighborWithComponentIDJoin())
 				.groupBy(0).aggregate(Aggregations.MIN, 1)
 				.join(iteration.getSolutionSet()).where(0).equalTo(0)
 				.with(new ComponentIdFilter());
 
 		// close the delta iteration (delta and new workset are identical)
-		DataSet<Tuple2<Long, Long>> result = iteration.closeWith(changes, changes);
+		DataSet<Tuple2<Integer, Integer>> result = iteration.closeWith(changes, changes);
 
 		// emit result
 		if (params.has("output")) {
@@ -145,11 +155,11 @@ public class ConnectedComponents {
 	/**
 	 * Undirected edges by emitting for each input edge the input edges itself and an inverted version.
 	 */
-	public static final class UndirectEdge implements FlatMapFunction<Tuple2<Long, Long>, Tuple2<Long, Long>> {
-		Tuple2<Long, Long> invertedEdge = new Tuple2<Long, Long>();
+	public static final class UndirectEdge implements FlatMapFunction<Tuple2<Integer, Integer>, Tuple2<Integer, Integer>> {
+		Tuple2<Integer, Integer> invertedEdge = new Tuple2<Integer, Integer>();
 
 		@Override
-		public void flatMap(Tuple2<Long, Long> edge, Collector<Tuple2<Long, Long>> out) {
+		public void flatMap(Tuple2<Integer, Integer> edge, Collector<Tuple2<Integer, Integer>> out) {
 			invertedEdge.f0 = edge.f1;
 			invertedEdge.f1 = edge.f0;
 			out.collect(edge);
@@ -164,11 +174,11 @@ public class ConnectedComponents {
 	 */
 	@ForwardedFieldsFirst("f1->f1")
 	@ForwardedFieldsSecond("f1->f0")
-	public static final class NeighborWithComponentIDJoin implements JoinFunction<Tuple2<Long, Long>, Tuple2<Long, Long>, Tuple2<Long, Long>> {
+	public static final class NeighborWithComponentIDJoin implements JoinFunction<Tuple2<Integer, Integer>, Tuple2<Integer, Integer>, Tuple2<Integer, Integer>> {
 
 		@Override
-		public Tuple2<Long, Long> join(Tuple2<Long, Long> vertexWithComponent, Tuple2<Long, Long> edge) {
-			return new Tuple2<Long, Long>(edge.f1, vertexWithComponent.f1);
+		public Tuple2<Integer, Integer> join(Tuple2<Integer, Integer> vertexWithComponent, Tuple2<Integer, Integer> edge) {
+			return new Tuple2<Integer, Integer>(edge.f1, vertexWithComponent.f1);
 		}
 	}
 
@@ -177,10 +187,10 @@ public class ConnectedComponents {
 	 * candidate component ID is less than the vertex's current component ID.
 	 */
 	@ForwardedFieldsFirst("*")
-	public static final class ComponentIdFilter implements FlatJoinFunction<Tuple2<Long, Long>, Tuple2<Long, Long>, Tuple2<Long, Long>> {
+	public static final class ComponentIdFilter implements FlatJoinFunction<Tuple2<Integer, Integer>, Tuple2<Integer, Integer>, Tuple2<Integer, Integer>> {
 
 		@Override
-		public void join(Tuple2<Long, Long> candidate, Tuple2<Long, Long> old, Collector<Tuple2<Long, Long>> out) {
+		public void join(Tuple2<Integer, Integer> candidate, Tuple2<Integer, Integer> old, Collector<Tuple2<Integer, Integer>> out) {
 			if (candidate.f1 < old.f1) {
 				out.collect(candidate);
 			}
@@ -191,28 +201,28 @@ public class ConnectedComponents {
 	//     UTIL METHODS
 	// *************************************************************************
 
-	private static DataSet<Long> getVertexDataSet(ExecutionEnvironment env, ParameterTool params) {
+	private static DataSet<Integer> getVertexDataSet(ExecutionEnvironment env, ParameterTool params) {
 		if (params.has("vertices")) {
-			return env.readCsvFile(params.get("vertices")).types(Long.class).map(
-				new MapFunction<Tuple1<Long>, Long>() {
-					public Long map(Tuple1<Long> value) {
+			return env.readCsvFile(params.get("vertices")).types(Integer.class).map(
+				new MapFunction<Tuple1<Integer>, Integer>() {
+					public Integer map(Tuple1<Integer> value) {
 						return value.f0;
 					}
 				});
 		} else {
 			System.out.println("Executing Connected Components example with default vertices data set.");
 			System.out.println("Use --vertices to specify file input.");
-			return ConnectedComponentsData.getDefaultVertexDataSet(env);
+			return ConnectedComponentsData.getDefaultVertexDataSeti(env);
 		}
 	}
 
-	private static DataSet<Tuple2<Long, Long>> getEdgeDataSet(ExecutionEnvironment env, ParameterTool params) {
+	private static DataSet<Tuple2<Integer, Integer>> getEdgeDataSet(ExecutionEnvironment env, ParameterTool params) {
 		if (params.has("edges")) {
-			return env.readCsvFile(params.get("edges")).fieldDelimiter(params.get("delimiter", "\t")).types(Long.class, Long.class);
+			return env.readCsvFile(params.get("edges")).fieldDelimiter(params.get("delimiter", "\t")).types(Integer.class, Integer.class);
 		} else {
 			System.out.println("Executing Connected Components example with default edges data set.");
 			System.out.println("Use --edges to specify file input.");
-			return ConnectedComponentsData.getDefaultEdgeDataSet(env);
+			return ConnectedComponentsData.getDefaultEdgeDataSeti(env);
 		}
 	}
 }
