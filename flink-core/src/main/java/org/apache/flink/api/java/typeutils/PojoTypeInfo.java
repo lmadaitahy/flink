@@ -296,9 +296,18 @@ public class PojoTypeInfo<T> extends CompositeType<T> {
 
 	///
 	static Map<Class<?>, Class<? extends TypeSerializer>> customSerializers = new HashMap<>();
+	static Map<Class<?>, CustomSerializerFactory> customSerializerFactories = new HashMap<>();
 
 	public static <C, S extends TypeSerializer<C>> void registerCustomSerializer(Class<C> c, Class<S> s) {
 		customSerializers.put(c, s);
+	}
+
+	public static <C> void registerCustomSerializer(Class<C> c, CustomSerializerFactory f) {
+		customSerializerFactories.put(c, f);
+	}
+
+	public interface CustomSerializerFactory {
+		<C> TypeSerializer<C> get(PojoTypeInfo<C> typeInfo);
 	}
 	///
 
@@ -310,6 +319,10 @@ public class PojoTypeInfo<T> extends CompositeType<T> {
 		///
 		if(customSerializers.containsKey(this.getTypeClass())) {
 			return InstantiationUtil.instantiate(customSerializers.get(this.getTypeClass()));
+		}
+
+		if(customSerializerFactories.containsKey(this.getTypeClass())) {
+			return customSerializerFactories.get(this.getTypeClass()).get(this);
 		}
 		///
 
