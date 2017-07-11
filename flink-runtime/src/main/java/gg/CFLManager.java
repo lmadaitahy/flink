@@ -330,7 +330,7 @@ public class CFLManager {
 			// addTentative-val olyankor, amikor egymas utan tobb appendToCFL-t hiv valaki.
 			//assert tentativeCFL.size() == curCFL.size();
 
-			LOG.info("Adding " + bbId + " to CFL (appendToCFL)");
+			LOG.info("Adding " + bbId + " to CFL (appendToCFL) " + System.currentTimeMillis());
 			sendElement(new CFLElement(cflSendSeqNum++, bbId));
 		}
 	}
