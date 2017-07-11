@@ -288,7 +288,7 @@ public class CFLManager {
 			if (t == null)
 				break;
 			curCFL.add(t);
-			LOG.info("Adding BBID " + t + " to CFL");
+			LOG.info("Adding BBID " + t + " to CFL " + System.currentTimeMillis());
 			notifyCallbacks();
 			// szoval minden elemnel kuldunk kulon, tehat a subscribereknek sok esetben eleg lehet az utolso elemet nezni
 		}

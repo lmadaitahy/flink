@@ -318,7 +318,7 @@ public class IterationHeadTask<X, Y, S extends Function, OT> extends AbstractIte
 			while (this.running && !terminationRequested()) {
 
 				if (log.isInfoEnabled()) {
-					log.info(formatLogString("starting iteration [" + currentIteration() + "]"));
+					log.info(formatLogString("starting iteration [" + currentIteration() + "] "  + System.currentTimeMillis()));
 				}
 
 				barrier.setup();
