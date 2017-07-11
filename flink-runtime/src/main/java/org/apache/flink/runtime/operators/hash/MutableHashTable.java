@@ -1209,6 +1209,9 @@ public class MutableHashTable<BT, PT> implements MemorySegmentSource {
 	 * @return The number of the spilled partition.
 	 */
 	protected int spillPartition() throws IOException {
+
+		LOG.info("MutableHashTable spilling a partition");
+
 		// find the largest partition
 		ArrayList<HashPartition<BT, PT>> partitions = this.partitionsBeingBuilt;
 		int largestNumBlocks = 0;
