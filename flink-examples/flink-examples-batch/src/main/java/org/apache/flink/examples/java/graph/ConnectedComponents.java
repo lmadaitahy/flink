@@ -176,9 +176,14 @@ public class ConnectedComponents {
 	@ForwardedFieldsSecond("f1->f0")
 	public static final class NeighborWithComponentIDJoin implements JoinFunction<Tuple2<Integer, Integer>, Tuple2<Integer, Integer>, Tuple2<Integer, Integer>> {
 
+        private final Tuple2<Integer, Integer> reuse = Tuple2.of(0,0);
+
 		@Override
 		public Tuple2<Integer, Integer> join(Tuple2<Integer, Integer> vertexWithComponent, Tuple2<Integer, Integer> edge) {
-			return new Tuple2<Integer, Integer>(edge.f1, vertexWithComponent.f1);
+			//return new Tuple2<Integer, Integer>(edge.f1, vertexWithComponent.f1);
+            reuse.f0 = edge.f1;
+            reuse.f1 = vertexWithComponent.f1;
+            return reuse;
 		}
 	}
 
