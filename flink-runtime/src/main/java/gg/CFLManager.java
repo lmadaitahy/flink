@@ -29,6 +29,8 @@ public class CFLManager {
 
 	private static boolean logCoord = false;
 
+	public static boolean barrier = true; // barrier between iteration steps
+
 	private static CFLManager sing = null;
 	public static CFLManager getSing() {return sing;}
 
@@ -253,6 +255,8 @@ public class CFLManager {
 								closeInputBagRemote(msg.closeInputBag.bagID, msg.closeInputBag.opID);
 							} else if (msg.subscribeCnt != null) {
 								subscribeCntRemote();
+							} else if (msg.barrierAllReached != null) {
+								barrierAllReachedRemote(msg.barrierAllReached.cflSize);
 							} else {
 								assert false;
 							}
@@ -431,6 +435,8 @@ public class CFLManager {
 
 		closeInputBags.clear();
 
+		barrierReached.clear();
+
 		terminalBB = -1;
 		numSubscribed = 0;
 		numToSubscribe = null;
@@ -481,6 +487,11 @@ public class CFLManager {
 	private final Set<BagID> emptyBags = new HashSet<>();
 
 	private final List<CloseInputBag> closeInputBags = new ArrayList<>();
+
+	// -- Begin barrier stuff --
+	private final Map<Integer, Integer> barrierReached = new HashMap<>(); // CFLSize -> Int: mely steppel hanyan vegeztek
+	private static final Set<Integer> opsInLoop = new HashSet<>(Arrays.asList(15,5,6,7,10,11,16));
+	// -- End   barrier stuff --
 
     // kliens -> coordinator
     public void consumedLocal(BagID bagID, int numElements, int subtaskIndex, int opID) {
@@ -672,6 +683,22 @@ public class CFLManager {
 				emptyBags.add(bagID);
 				closeInputBagLocal(bagID, CloseInputBag.emptyBag);
 			}
+
+			if (barrier) {
+				if (opsInLoop.contains(opID)) {
+					Integer oldVal = barrierReached.get(bagID.cflSize);
+					if (oldVal == null) {
+						barrierReached.put(bagID.cflSize,1);
+					} else {
+						barrierReached.put(bagID.cflSize, oldVal + 1);
+					}
+					int newVal = barrierReached.get(bagID.cflSize);
+					if (logCoord) LOG.info("checkForClosingProduced(" + bagID + ", " + s + ", opID = " + opID + ") barrierReached cflSize=" + bagID.cflSize + ", newVal=" + newVal + ", opsInLoop.size==" + opsInLoop.size());
+					if (newVal == opsInLoop.size()) { // (a +1 amiatt kell, mert a MutableBag ketszer kell)
+						barrierAllReachedLocal(bagID.cflSize);
+					}
+				}
+			}
 		}
 	}
 
@@ -722,6 +749,30 @@ public class CFLManager {
 		checkVoteStop();
 	}
 
+	private synchronized void barrierAllReachedLocal(int cflSize) {
+		synchronized (msgSendLock) {
+			assert coordinator;
+
+			for (int i = 0; i < hosts.length; i++) {
+				try {
+					msgSer.serialize(new Msg(jobCounter, new BarrierAllReached(cflSize)), senderDataOutputViews[i]);
+					senderStreams[i].flush();
+				} catch (IOException e1) {
+					throw new RuntimeException(e1);
+				}
+			}
+		}
+	}
+
+	private synchronized void barrierAllReachedRemote(int cflSize) {
+		if (logCoord) LOG.info("barrierAllReachedRemote(" + cflSize + ")");
+
+		ArrayList<CFLCallback> origCallbacks = new ArrayList<>(callbacks);
+		for (CFLCallback cb: origCallbacks) {
+			cb.notifyBarrierAllReached(cflSize);
+		}
+	}
+
     // --------------------------------
 
     public static class Msg {
@@ -734,6 +785,7 @@ public class CFLManager {
 		public Produced produced;
 		public CloseInputBag closeInputBag;
 		public SubscribeCnt subscribeCnt;
+		public BarrierAllReached barrierAllReached;
 
 		public Msg() {}
 
@@ -762,6 +814,11 @@ public class CFLManager {
 			this.subscribeCnt = subscribeCnt;
 		}
 
+		public Msg(int jobCounter, BarrierAllReached barrierAllReached) {
+			this.jobCounter = jobCounter;
+			this.barrierAllReached = barrierAllReached;
+		}
+
 		@Override
 		public String toString() {
 			return "Msg{" +
@@ -771,6 +828,7 @@ public class CFLManager {
 					", produced=" + produced +
 					", closeInputBag=" + closeInputBag +
 					", subscribeCnt=" + subscribeCnt +
+					", barrierAllReached=" + barrierAllReached +
 					'}';
 		}
 	}
@@ -864,6 +922,24 @@ public class CFLManager {
 
 	public static class SubscribeCnt {
 		public byte dummy; // To make it a POJO
+	}
+
+	public static class BarrierAllReached {
+
+		public int cflSize;
+
+		public BarrierAllReached() {}
+
+		public BarrierAllReached(int cflSize) {
+			this.cflSize = cflSize;
+		}
+
+		@Override
+		public String toString() {
+			return "BarrierAllReached{" +
+					"cflSize=" + cflSize +
+					'}';
+		}
 	}
 
 	// --------------------------------

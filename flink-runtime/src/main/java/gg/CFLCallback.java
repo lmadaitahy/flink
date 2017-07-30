@@ -10,4 +10,6 @@ public interface CFLCallback {
 	void notifyTerminalBB();
 
 	void notifyCloseInput(BagID bagID, int opID); // todo: az implementacio-kor majd figyelni kell, hogy a ket input lehet ugyanaz a bag is
+
+	void notifyBarrierAllReached(int cflSize);
 }
