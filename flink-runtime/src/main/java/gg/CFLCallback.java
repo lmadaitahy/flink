@@ -15,10 +15,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package gg;
 
 import java.util.List;
 
+/**
+ *
+ */
 public interface CFLCallback {
 
 	// Note: always only one element is added

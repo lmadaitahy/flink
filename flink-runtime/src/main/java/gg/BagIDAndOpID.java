@@ -15,8 +15,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package gg;
 
+/**
+ *
+ */
 public class BagIDAndOpID {
 
 	public BagID bagID;
@@ -29,12 +33,12 @@ public class BagIDAndOpID {
 
 	@Override
 	public boolean equals(Object o) {
-		if (this == o) return true;
-		if (o == null || getClass() != o.getClass()) return false;
+		if (this == o) {return true;}
+		if (o == null || getClass() != o.getClass()) {return false;}
 
 		BagIDAndOpID that = (BagIDAndOpID) o;
 
-		if (opID != that.opID) return false;
+		if (opID != that.opID) {return false;}
 		return bagID.equals(that.bagID);
 	}
 
