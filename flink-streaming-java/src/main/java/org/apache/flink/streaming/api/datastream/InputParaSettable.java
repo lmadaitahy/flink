@@ -15,11 +15,19 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.flink.streaming.api.datastream;
 
 import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 
+/**
+ *
+ * @param <IN>
+ * @param <OUT>
+ */
 public interface InputParaSettable<IN, OUT> extends OneInputStreamOperator<IN, OUT> {
+
 	void setInputPara(int p);
+
 	void setName(String name);
 }

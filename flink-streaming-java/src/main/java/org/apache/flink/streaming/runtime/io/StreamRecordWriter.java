@@ -83,7 +83,7 @@ public class StreamRecordWriter<T extends IOReadableWritable> extends RecordWrit
 
 	private boolean isForceFlush(T record) {
 		if (record instanceof SerializationDelegate) {
-			Object ins = ((SerializationDelegate)record).getInstance();
+			Object ins = ((SerializationDelegate) record).getInstance();
 			if (ins instanceof StreamRecord) {
 				Object sr = ((StreamRecord) ins).getValue();
 				if (sr instanceof CanForceFlush) {

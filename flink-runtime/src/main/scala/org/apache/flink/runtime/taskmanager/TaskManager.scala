@@ -226,8 +226,10 @@ class TaskManager(
       //val hostsExceptMe = allHosts.filter(s => s != hostName)
       CFLManager.create(this, allHosts, allHosts.head == hostName)
 
-      if (!allHosts.contains(hostName))
-        throw new RuntimeException("A slaves fajlban a 'hostname' altal visszaadott neveknek kell lenniuk")
+      if (!allHosts.contains(hostName)) {
+        throw new RuntimeException(
+          "A slaves fajlban a 'hostname' altal visszaadott neveknek kell lenniuk")
+      }
       CFLManager.tmId = allHosts.indexOf(hostName).asInstanceOf[Byte]
       CFLManager.numAllSlots = allHosts.length * numberOfSlots
       CFLManager.numTaskSlotsPerTm = numberOfSlots
@@ -394,7 +396,8 @@ class TaskManager(
       sender ! decorateMessage(ResponseNumActiveConnections(numActive))
 
     // CFL
-    // Ez azert jon ide be, mert korabban nem kuldott cancel-t a tm (hanem csak a client), viszont most kuld a vote-nal (vagy vmi ilyesmi)
+    // Ez azert jon ide be, mert korabban nem kuldott cancel-t a tm (hanem csak a client),
+    // viszont most kuld a vote-nal (vagy vmi ilyesmi)
     case CancellationSuccess(_,_) =>
       ()
   }

@@ -73,18 +73,18 @@ public class ConnectedComponentsData {
 
 
 
-	public static final int[] VERTICESi  = new int[] {
+	public static final int[] VERTICESI = new int[] {
 			1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
 
 	public static DataSet<Integer> getDefaultVertexDataSeti(ExecutionEnvironment env) {
 		List<Integer> verticesList = new LinkedList<>();
-		for (int vertexId : VERTICESi) {
+		for (int vertexId : VERTICESI) {
 			verticesList.add(vertexId);
 		}
 		return env.fromCollection(verticesList);
 	}
 
-	public static final Object[][] EDGESi = new Object[][] {
+	public static final Object[][] EDGESI = new Object[][] {
 			new Object[]{1, 2},
 			new Object[]{2, 3},
 			new Object[]{2, 4},

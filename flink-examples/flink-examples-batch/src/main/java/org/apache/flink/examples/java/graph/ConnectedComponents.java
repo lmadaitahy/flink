@@ -32,7 +32,6 @@ import org.apache.flink.api.java.operators.DeltaIteration;
 import org.apache.flink.api.java.tuple.Tuple1;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.api.java.utils.ParameterTool;
-import org.apache.flink.configuration.Configuration;
 import org.apache.flink.examples.java.graph.util.ConnectedComponentsData;
 import org.apache.flink.util.Collector;
 
@@ -176,14 +175,14 @@ public class ConnectedComponents {
 	@ForwardedFieldsSecond("f1->f0")
 	public static final class NeighborWithComponentIDJoin implements JoinFunction<Tuple2<Integer, Integer>, Tuple2<Integer, Integer>, Tuple2<Integer, Integer>> {
 
-        private final Tuple2<Integer, Integer> reuse = Tuple2.of(0,0);
+		private final Tuple2<Integer, Integer> reuse = Tuple2.of(0, 0);
 
 		@Override
 		public Tuple2<Integer, Integer> join(Tuple2<Integer, Integer> vertexWithComponent, Tuple2<Integer, Integer> edge) {
 			//return new Tuple2<Integer, Integer>(edge.f1, vertexWithComponent.f1);
-            reuse.f0 = edge.f1;
-            reuse.f1 = vertexWithComponent.f1;
-            return reuse;
+			reuse.f0 = edge.f1;
+			reuse.f1 = vertexWithComponent.f1;
+			return reuse;
 		}
 	}
 

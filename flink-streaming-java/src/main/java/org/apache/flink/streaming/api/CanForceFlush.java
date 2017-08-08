@@ -17,7 +17,10 @@
 
 package org.apache.flink.streaming.api;
 
-
+/**
+ *
+ */
 public interface CanForceFlush {
-    boolean shouldFlush();
+
+	boolean shouldFlush();
 }
