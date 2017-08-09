@@ -57,7 +57,7 @@ public class CFLManager {
 
 	private static boolean logCoord = false;
 
-	public static boolean barrier = true; // barrier between iteration steps
+	public static boolean barrier = false; // barrier between iteration steps
 
 	private static CFLManager sing = null;
 	public static CFLManager getSing() {return sing;}
