@@ -246,6 +246,7 @@ public class CFLManager {
 			this.socket = socket;
 			this.connID = connID;
 			thread = new Thread(this, "ConnReader_" + connID);
+			thread.setDaemon(true);
 			thread.start();
 		}
 
