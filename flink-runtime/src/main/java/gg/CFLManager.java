@@ -611,7 +611,13 @@ public class CFLManager {
 		// Add to s.inputs, and add to the inputTos of the inputs
 		for (BagID inp: inpIDs) {
 			s.inputs.add(inp);
-			bagStatuses.get(inp).inputTo.add(bagID);
+
+			BagStatus inpS = bagStatuses.get(inp);
+			if (inpS == null) {
+				inpS = new BagStatus();
+				bagStatuses.put(inp, inpS);
+			}
+			inpS.inputTo.add(bagID);
 		}
 		assert s.inputs.size() <= 2;
 
