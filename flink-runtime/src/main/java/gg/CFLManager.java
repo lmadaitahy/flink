@@ -131,8 +131,6 @@ public class CFLManager {
 
 	private volatile int jobCounter = -10;
 
-	private ResetThread resetThread;
-
 	public JobID getJobID() {
 		return jobID;
 	}
@@ -287,6 +285,10 @@ public class CFLManager {
 								subscribeCntRemote();
 							} else if (msg.barrierAllReached != null) {
 								barrierAllReachedRemote(msg.barrierAllReached.cflSize);
+							} else if (msg.voteStop != null) {
+								voteStopRemote();
+							} else if (msg.stop != null) {
+								stopRemote();
 							} else {
 								assert false;
 							}
@@ -398,10 +400,7 @@ public class CFLManager {
 
 	private void checkVoteStop() {
 		if (numToSubscribe != null && numSubscribed == numToSubscribe && callbacks.isEmpty()) {
-			LOG.info("tm.CFLVoteStop();");
-			tm.CFLVoteStop();
-			setJobID(null);
-			resetThread = new ResetThread();
+			voteStopLocal();
 		} else {
 			if (numToSubscribe == null) {
 				LOG.info("checkVoteStop: numToSubscribe == null");
@@ -413,7 +412,6 @@ public class CFLManager {
 				}
 			}
 		}
-
 	}
 
 	public synchronized void unsubscribe(CFLCallback cb) {
@@ -421,32 +419,6 @@ public class CFLManager {
 		callbacks.remove(cb);
 
 		checkVoteStop();
-	}
-
-	private class ResetThread implements Runnable {
-
-		Thread thread;
-
-		public ResetThread() {
-			thread = new Thread(this, "ResetThread");
-			thread.start();
-		}
-
-		@Override
-		public void run() {
-			try {
-				Thread.sleep(500);
-			} catch (InterruptedException e) {
-				throw new RuntimeException();
-			}
-			try {
-				reset();
-			} catch (Throwable e) {
-				e.printStackTrace();
-				LOG.error(ExceptionUtils.stringifyException(e));
-				Runtime.getRuntime().halt(201);
-			}
-		}
 	}
 
 	private synchronized void reset() {
@@ -470,6 +442,8 @@ public class CFLManager {
 		terminalBB = -1;
 		numSubscribed = 0;
 		numToSubscribe = null;
+
+		numVoteStops = 0;
 
 		jobCounter++;
 	}
@@ -523,16 +497,33 @@ public class CFLManager {
 	private static final Set<Integer> opsInLoop = new HashSet<>(Arrays.asList(15,5,6,7,10,11,16));
 	// -- End   barrier stuff --
 
-    // kliens -> coordinator
-    public void consumedLocal(BagID bagID, int numElements, int subtaskIndex, int opID) {
+	private void sendToCoordinator(Msg msg) {
 		synchronized (msgSendLock) {
 			try {
-				msgSer.serialize(new Msg(jobCounter, new Consumed(bagID, numElements, subtaskIndex, opID)), senderDataOutputViews[0]);
+				msgSer.serialize(msg, senderDataOutputViews[0]);
 				senderStreams[0].flush();
 			} catch (IOException e) {
 				throw new RuntimeException(e);
 			}
 		}
+	}
+
+	private void sendToEveryone(Msg msg) {
+		synchronized (msgSendLock) {
+			for (int i = 0; i < hosts.length; i++) {
+				try {
+					msgSer.serialize(msg, senderDataOutputViews[i]);
+					senderStreams[i].flush();
+				} catch (IOException e) {
+					throw new RuntimeException(e);
+				}
+			}
+		}
+	}
+
+    // kliens -> coordinator
+    public void consumedLocal(BagID bagID, int numElements, int subtaskIndex, int opID) {
+    	sendToCoordinator(new Msg(jobCounter, new Consumed(bagID, numElements, subtaskIndex, opID)));
     }
 
     private synchronized void consumedRemote(BagID bagID, int numElements, int subtaskIndex, int opID) {
@@ -586,15 +577,8 @@ public class CFLManager {
 
     // kliens -> coordinator
 	public void producedLocal(BagID bagID, BagID[] inpIDs, int numElements, int para, int subtaskIndex, int opID) {
-		synchronized (msgSendLock) {
-			assert inpIDs.length <= 2; // ha 0, akkor BagSource
-			try {
-				msgSer.serialize(new Msg(jobCounter, new Produced(bagID, inpIDs, numElements, para, subtaskIndex, opID)), senderDataOutputViews[0]);
-				senderStreams[0].flush();
-			} catch (IOException e) {
-				throw new RuntimeException();
-			}
-		}
+		assert inpIDs.length <= 2; // ha 0, akkor BagSource
+		sendToCoordinator(new Msg(jobCounter, new Produced(bagID, inpIDs, numElements, para, subtaskIndex, opID)));
     }
 
     private synchronized void producedRemote(BagID bagID, BagID[] inpIDs, int numElements, int para, int subtaskIndex, int opID) {
@@ -740,18 +724,8 @@ public class CFLManager {
 
     // A coordinator a local itt. Az operatorok inputjainak a close-olasat valtja ez ki.
     private synchronized void closeInputBagLocal(BagID bagID, int opID) {
-		synchronized (msgSendLock) { // Azert kell itt ez is, mert kulonben a senderStream-ekben osszekavarodhatnak az uzenetek
-			assert coordinator;
-
-			for (int i = 0; i < hosts.length; i++) {
-				try {
-					msgSer.serialize(new Msg(jobCounter, new CloseInputBag(bagID, opID)), senderDataOutputViews[i]);
-					senderStreams[i].flush();
-				} catch (IOException e1) {
-					throw new RuntimeException(e1);
-				}
-			}
-		}
+		assert coordinator;
+		sendToEveryone(new Msg(jobCounter, new CloseInputBag(bagID, opID)));
     }
 
 	// (runs on client)
@@ -768,16 +742,7 @@ public class CFLManager {
 
 
     private void subscribeCntLocal() {
-		synchronized (msgSendLock) {
-			for (int i = 0; i < hosts.length; i++) {
-				try {
-					msgSer.serialize(new Msg(jobCounter, new SubscribeCnt()), senderDataOutputViews[i]);
-					senderStreams[i].flush();
-				} catch (IOException e1) {
-					throw new RuntimeException(e1);
-				}
-			}
-		}
+		sendToEveryone(new Msg(jobCounter, new SubscribeCnt()));
 	}
 
 	private synchronized void subscribeCntRemote() {
@@ -786,18 +751,8 @@ public class CFLManager {
 	}
 
 	private synchronized void barrierAllReachedLocal(int cflSize) {
-		synchronized (msgSendLock) {
-			assert coordinator;
-
-			for (int i = 0; i < hosts.length; i++) {
-				try {
-					msgSer.serialize(new Msg(jobCounter, new BarrierAllReached(cflSize)), senderDataOutputViews[i]);
-					senderStreams[i].flush();
-				} catch (IOException e1) {
-					throw new RuntimeException(e1);
-				}
-			}
-		}
+		assert coordinator;
+		sendToEveryone(new Msg(jobCounter, new BarrierAllReached(cflSize)));
 	}
 
 	private synchronized void barrierAllReachedRemote(int cflSize) {
@@ -807,6 +762,36 @@ public class CFLManager {
 		for (CFLCallback cb: origCallbacks) {
 			cb.notifyBarrierAllReached(cflSize);
 		}
+	}
+
+	private synchronized void voteStopLocal() {
+		LOG.info("voteStopLocal()");
+		sendToCoordinator(new Msg(jobCounter, new VoteStop()));
+	}
+
+	private int numVoteStops = 0;
+
+	private synchronized void voteStopRemote() {
+		LOG.info("voteStopRemote()");
+		assert coordinator;
+    	numVoteStops++;
+    	if (numVoteStops == hosts.length) {
+    		stopLocal();
+		}
+	}
+
+	private synchronized void stopLocal() {
+		LOG.info("stopLocal()");
+		assert coordinator;
+		sendToEveryone(new Msg(jobCounter, new Stop()));
+	}
+
+	private synchronized void stopRemote() {
+		LOG.info("stopRemote()");
+		LOG.info("tm.CFLVoteStop();");
+		tm.CFLVoteStop();
+		setJobID(null);
+		reset();
 	}
 
     // --------------------------------
@@ -822,6 +807,8 @@ public class CFLManager {
 		public CloseInputBag closeInputBag;
 		public SubscribeCnt subscribeCnt;
 		public BarrierAllReached barrierAllReached;
+		public VoteStop voteStop;
+		public Stop stop;
 
 		public Msg() {}
 
@@ -855,6 +842,16 @@ public class CFLManager {
 			this.barrierAllReached = barrierAllReached;
 		}
 
+		public Msg(int jobCounter, VoteStop voteStop) {
+			this.jobCounter = jobCounter;
+			this.voteStop = voteStop;
+		}
+
+		public Msg(int jobCounter, Stop stop) {
+			this.jobCounter = jobCounter;
+			this.stop = stop;
+		}
+
 		@Override
 		public String toString() {
 			return "Msg{" +
@@ -865,6 +862,8 @@ public class CFLManager {
 					", closeInputBag=" + closeInputBag +
 					", subscribeCnt=" + subscribeCnt +
 					", barrierAllReached=" + barrierAllReached +
+					", voteStop=" + voteStop +
+					", stop=" + stop +
 					'}';
 		}
 	}
@@ -976,6 +975,14 @@ public class CFLManager {
 					"cflSize=" + cflSize +
 					'}';
 		}
+	}
+
+	public static class VoteStop {
+		public byte dummy; // To make it a POJO
+	}
+
+	public static class Stop {
+		public byte dummy; // To make it a POJO
 	}
 
 	// --------------------------------
