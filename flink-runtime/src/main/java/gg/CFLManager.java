@@ -42,6 +42,7 @@ import java.net.SocketAddress;
 import java.net.SocketTimeoutException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -335,6 +336,13 @@ public class CFLManager {
 	}
 
 	private synchronized void notifyCallbacks() {
+		callbacks.sort(new Comparator<CFLCallback>() {
+			@Override
+			public int compare(CFLCallback o1, CFLCallback o2) {
+				return -Integer.compare(o1.getOpID(), o2.getOpID());
+			}
+		});
+
 		for (CFLCallback cb: callbacks) {
 			cb.notify(curCFL);
 		}
