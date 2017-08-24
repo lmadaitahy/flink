@@ -263,7 +263,7 @@ public class CFLManager {
 
 							if (msg.jobCounter < jobCounter) {
 								// Mondjuk ebbol itt lehet baj, ha vki meg nem kapta meg nem kapta meg a voteStop-hoz eljutashoz szukseges msg-ket.
-								// De most van az a sleep(500) a reset elott, remelhetoleg az biztositja, hogy ne jussunk ide.
+								// De amiota a coordinatoron osszevarjuk a vegzeseket, mielott barki is resetelne, azota remeljuk nem jutunk ide.
 								LOG.info("Old msg, ignoring (msg.jobCounter = " + msg.jobCounter + ", jobCounter = " + jobCounter + ")");
 								continue;
 							}
