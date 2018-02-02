@@ -16,7 +16,7 @@
  * limitations under the License.
  */
 
-package gg;
+package eu.stratosphere.labyrinth;
 
 import org.apache.flink.api.common.ExecutionConfig;
 import org.apache.flink.api.common.JobID;

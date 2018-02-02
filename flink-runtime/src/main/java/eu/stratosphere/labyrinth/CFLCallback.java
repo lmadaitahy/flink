@@ -16,36 +16,24 @@
  * limitations under the License.
  */
 
-package gg;
+package eu.stratosphere.labyrinth;
+
+import java.util.List;
 
 /**
  *
  */
-public class BagIDAndOpID {
+public interface CFLCallback {
 
-	public BagID bagID;
-	public int opID;
+	// Note: always only one element is added
+	void notify(List<Integer> newCFL);
 
-	public BagIDAndOpID(BagID bagID, int opID) {
-		this.bagID = bagID;
-		this.opID = opID;
-	}
+	void notifyTerminalBB();
 
-	@Override
-	public boolean equals(Object o) {
-		if (this == o) {return true;}
-		if (o == null || getClass() != o.getClass()) {return false;}
+	void notifyCloseInput(BagID bagID, int opID); // todo: az implementacio-kor majd figyelni kell, hogy a ket input lehet ugyanaz a bag is
 
-		BagIDAndOpID that = (BagIDAndOpID) o;
+	void notifyBarrierAllReached(int cflSize);
 
-		if (opID != that.opID) {return false;}
-		return bagID.equals(that.bagID);
-	}
 
-	@Override
-	public int hashCode() {
-		int result = bagID.hashCode();
-		result = 31 * result + opID;
-		return result;
-	}
+	int getOpID();
 }

@@ -16,7 +16,7 @@
  * limitations under the License.
  */
 
-package gg;
+package eu.stratosphere.labyrinth;
 
 /**
  *

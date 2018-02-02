@@ -27,8 +27,8 @@ import java.util.{Collections, UUID}
 import _root_.akka.actor._
 import _root_.akka.pattern.ask
 import _root_.akka.util.Timeout
+import eu.stratosphere.labyrinth.CFLManager
 import org.apache.flink.api.common.time.Time
-import gg.CFLManager
 import grizzled.slf4j.Logger
 import org.apache.commons.lang3.exception.ExceptionUtils
 import org.apache.flink.configuration._
@@ -215,7 +215,7 @@ class TaskManager(
 
     //ggg
     import sys.process._
-    import gg._
+    import eu.stratosphere.labyrinth._
     //val curDir = ("pwd"!!).stripSuffix("\n")
     val hostName = ("hostname"!!).stripSuffix("\n")
 
