@@ -594,7 +594,7 @@ class StreamExecutionEnvironment(javaEnv: JavaEnv) {
    */
   @PublicEvolving
   def createInput[T: TypeInformation](inputFormat: InputFormat[T, _]): DataStream[T] =
-    asScalaStream(javaEnv.createInput(inputFormat))
+    asScalaStream(javaEnv.createInput(inputFormat, implicitly[TypeInformation[T]]))
 
   /**
    * Create a DataStream using a user defined source function for arbitrary
